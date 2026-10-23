@@ -1,7 +1,8 @@
 import { NavState } from '../core/navigator';
 import { Profile } from '../core/route';
-import { AudioSettings, Cue, panFor } from './mapping';
+import { AudioSettings, Cue, panFor, soundscapeFor } from './mapping';
 import { CueScheme, ToneParams } from './schemes';
+import { Soundscape } from './soundscape';
 import { chime, chirp, noiseBurst, notes, reverbImpulse, spatializer, tone } from './synth';
 
 export type AudioEvent = 'offRoute' | 'backOnRoute' | 'arrived' | 'rerouted' | 'maneuverPassed';
@@ -35,6 +36,9 @@ export class AudioEngine {
   private busyUntil = 0; // suppress guidance while an event sound plays
   private lastPlayedKind: Cue['kind'] | null = null;
   private lastPlayedAt = 0;
+  private scape: Soundscape | null = null;
+  private scapeKey = '';
+  private lastScapeUpdate = 0;
 
   muted = false;
   lastGuidance: Cue | ToneParams | null = null;
@@ -102,6 +106,7 @@ export class AudioEngine {
     if (!ctx || !this.bus) return;
     const now = ctx.currentTime;
     const ahead = 0.05;
+    this.updateSoundscape(st, now);
     if (!st) {
       this.stopVoice();
       this.lastGuidance = this.lastManeuver = null;
@@ -146,6 +151,27 @@ export class AudioEngine {
     }
   }
 
+  /** Keep the background bed in step with the settings and the navigation state. */
+  private updateSoundscape(st: NavState | null, now: number): void {
+    const s = this.settings;
+    const want = this.ambient && s.soundscape > 0;
+    const root = s.basePitch / 4;
+    // Rebuild if it's no longer wanted or its key / panning changed.
+    if (this.scape && (!want || this.scapeKey !== `${root}|${s.panMode}`)) {
+      this.scape.stop();
+      this.scape = null;
+    }
+    if (!want) return;
+    if (!this.scape) {
+      this.scape = new Soundscape(this.ctx!, this.bus!, root, s.panMode);
+      this.scapeKey = `${root}|${s.panMode}`;
+    }
+    // Parameters glide anyway; ~10 updates/s is plenty and keeps automation lists short.
+    if (now - this.lastScapeUpdate < 0.1) return;
+    this.lastScapeUpdate = now;
+    this.scape.update(soundscapeFor(st, s), s.soundscape);
+  }
+
   /** A spatializer placed at the cue's direction, feeding the bus. */
   private placed(azimuth: number, pan: number): AudioNode {
     const node = spatializer(this.ctx!, this.settings.panMode, azimuth, pan);
@@ -157,6 +183,7 @@ export class AudioEngine {
     const ctx = this.ctx!;
     const dest = this.placed(cue.azimuth, cue.pan);
     if (this.ambient) {
+      if (cue.kind !== 'tick') this.scape?.duck(t);
       const g = cue.gain;
       switch (cue.kind) {
         case 'beep':
@@ -235,6 +262,7 @@ export class AudioEngine {
     const center = this.placed(0, 0);
     const b = this.settings.basePitch / 2;
     if (this.ambient) {
+      if (e !== 'maneuverPassed') this.scape?.duck(t);
       // Pentatonic intervals only (ratios of the major pentatonic), so events blend in.
       const seq = (ratios: number[], step: number, gain: number, decay: number, uneasy = false) =>
         ratios.forEach((r, i) => chime(ctx, center, t + i * step, { freq: b * r, gain, decay, bright: 0.5, uneasy }));

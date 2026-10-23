@@ -19,6 +19,10 @@ export interface AudioSettings {
   panMode: 'hrtf' | 'stereo';
   /** Start the turn preview this many metres before a turn. */
   turnWarn: Record<Profile, number>;
+  /** Ambient background (pad + breeze) level, 0 = off. Ambient style only. */
+  soundscape: number;
+  /** A soft airy layer that always comes from the direction to go. */
+  breeze: boolean;
 }
 
 export const DEFAULT_AUDIO: AudioSettings = {
@@ -30,7 +34,52 @@ export const DEFAULT_AUDIO: AudioSettings = {
   basePitch: 440,
   panMode: 'stereo',
   turnWarn: { foot: 20, bike: 50 },
+  soundscape: 0.5,
+  breeze: true,
 };
+
+/** Target state of the continuous background soundscape. */
+export interface SoundscapeParams {
+  /** Pad level 0..1 (before the user's soundscape setting). */
+  level: number;
+  /** 0 = warm and resolved (on route) … 1 = suspended chord (off route). */
+  tension: number;
+  /** Pad low-pass cutoff (Hz): open when on course, darker when off. */
+  cutoff: number;
+  /** Breathing rate of the pad (Hz), quicker when you move faster. */
+  breath: number;
+  breezeAzimuth: number;
+  breezePan: number;
+  breezeLevel: number;
+}
+
+/** No route: a quiet idle bed so the app still feels alive. */
+export const IDLE_SOUNDSCAPE: SoundscapeParams = {
+  level: 0.45,
+  tension: 0,
+  cutoff: 700,
+  breath: 0.05,
+  breezeAzimuth: 0,
+  breezePan: 0,
+  breezeLevel: 0,
+};
+
+export function soundscapeFor(state: NavState | null, s: AudioSettings): SoundscapeParams {
+  if (!state) return IDLE_SOUNDSCAPE;
+  const off = Math.min(1, Math.abs(state.relBearing) / 120);
+  const behind = isBehind(state.relBearing);
+  return {
+    // After arrival the bed settles down and stays resolved.
+    level: state.arrived ? 0.35 : 1,
+    tension: state.offRoute ? 1 : 0,
+    cutoff: 1400 - 900 * off,
+    breath: 0.05 + Math.min(0.2, state.speed * 0.025),
+    breezeAzimuth: state.relBearing,
+    breezePan: behind ? (state.relBearing >= 0 ? 1 : -1) : panFor(state.relBearing),
+    // Barely there when on course, clearly present when you need to turn.
+    breezeLevel: !s.breeze || state.arrived ? 0 : 0.15 + 0.85 * off,
+  };
+}
 
 /** One sound event produced by a scheme. */
 export interface Cue {

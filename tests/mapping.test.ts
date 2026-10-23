@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LngLat, destination } from '../src/core/geo';
 import { DEFAULT_NAV, Navigator } from '../src/core/navigator';
-import { DEFAULT_AUDIO, beaconBeep, panFor, pitchFor, turnPreview } from '../src/audio/mapping';
+import { DEFAULT_AUDIO, IDLE_SOUNDSCAPE, beaconBeep, panFor, pitchFor, soundscapeFor, turnPreview } from '../src/audio/mapping';
 import { SCHEMES } from '../src/audio/schemes';
 import { makeRoute } from './helpers';
 
@@ -64,6 +64,27 @@ describe('cue mapping', () => {
     const st = nav.update(destination(START, 90, 170), 90, 5, 0);
     expect(turnPreview(st, DEFAULT_AUDIO, 'bike')!.freq).toBeCloseTo(DEFAULT_AUDIO.basePitch * 0.75);
     expect(turnPreview(st, { ...DEFAULT_AUDIO, style: 'classic' }, 'bike')!.freq).toBeCloseTo(DEFAULT_AUDIO.basePitch * 1.5);
+  });
+
+  it('soundscape: calm and resolved on course, breeze swells and darkens when turned away', () => {
+    const nav = new Navigator(r(), DEFAULT_NAV.bike);
+    const p = destination(START, 90, 50);
+    const on = soundscapeFor(nav.update(p, 90, 5, 0), DEFAULT_AUDIO);
+    const off = soundscapeFor(nav.update(p, 30, 5, 0), DEFAULT_AUDIO);
+    expect(on.tension).toBe(0);
+    expect(off.breezeLevel).toBeGreaterThan(on.breezeLevel * 2);
+    expect(off.breezePan).toBeCloseTo(60 / 90, 1); // beacon is 60° to the right
+    expect(off.cutoff).toBeLessThan(on.cutoff);
+    expect(soundscapeFor(null, DEFAULT_AUDIO)).toBe(IDLE_SOUNDSCAPE);
+    expect(soundscapeFor(nav.update(p, 30, 5, 0), { ...DEFAULT_AUDIO, breeze: false }).breezeLevel).toBe(0);
+  });
+
+  it('soundscape suspends its chord when off route', () => {
+    const s = DEFAULT_NAV.bike;
+    const nav = new Navigator(r(), s);
+    const far = destination(destination(START, 90, 100), 0, s.offRouteDistance + 10);
+    nav.update(far, 90, 5, 0);
+    expect(soundscapeFor(nav.update(far, 90, 5, s.offRouteDelay + 1), DEFAULT_AUDIO).tension).toBe(1);
   });
 
   it('events-only scheme stays quiet when roughly on course', () => {

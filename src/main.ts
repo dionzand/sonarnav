@@ -241,6 +241,7 @@ interface SliderSpec {
 }
 const sliders: SliderSpec[] = [
   { id: 'volume', get: () => audioSettings.volume, set: (v) => audio.setVolume(v), fmt: (v) => `${Math.round(v * 100)}%` },
+  { id: 'soundscape', get: () => audioSettings.soundscape, set: (v) => (audioSettings.soundscape = v), fmt: (v) => (v ? `${Math.round(v * 100)}%` : 'off') },
   { id: 'deadzone', get: () => audioSettings.deadZone, set: (v) => (audioSettings.deadZone = v), fmt: (v) => `${v}°` },
   { id: 'rate', get: () => audioSettings.rate, set: (v) => (audioSettings.rate = v), fmt: (v) => `${v.toFixed(1)}×` },
   { id: 'pitch', get: () => audioSettings.basePitch, set: (v) => (audioSettings.basePitch = v) },
@@ -277,6 +278,13 @@ panSel.addEventListener('change', () => {
   audioSettings.panMode = panSel.value as AudioSettings['panMode'];
   save();
 });
+const breezeBox = $<HTMLInputElement>('breeze');
+breezeBox.checked = audioSettings.breeze;
+breezeBox.addEventListener('change', () => {
+  audioSettings.breeze = breezeBox.checked;
+  save();
+});
+
 const silentBox = $<HTMLInputElement>('silent-aligned');
 silentBox.checked = audioSettings.silentWhenAligned;
 silentBox.addEventListener('change', () => {

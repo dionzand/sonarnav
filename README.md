@@ -27,6 +27,11 @@ Use **headphones**. Click **Start audio** (or press Enter), then press **T** for
    - **Two falling, slightly clouded notes**: you're off the route. A new route is planned automatically, and a soft rising arpeggio confirms it.
    - **Long pentatonic arpeggio**: you've arrived.
 
+   All of this sits inside a continuous **soundscape** (adjust it with the Background slider):
+   - **Pad**: a soft, slowly breathing chord in the same key as the chimes. It breathes faster as you go faster and darkens as you turn off course. Off route, the chord drifts to an unresolved, suspended harmony, and it resolves again once you're back on route.
+   - **Breeze**: an airy layer that always comes *from the direction to go*. It's faint when you're on course and grows as you turn away. Turn it off with the "Directional breeze" checkbox.
+   - The background dips briefly under each chime, so the chimes sit inside it.
+
    When the situation changes (you drift off course, for example), the cue switches right away instead of waiting out the slow ambient rhythm.
 4. Tune everything in the **Sound** panel. Compare the schemes (Beacon / Continuous tone / Events only) and the styles (Ambient chimes / Classic beeps).
 
