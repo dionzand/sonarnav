@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SonarNav Playground</title>
+  </head>
+  <body>
+    <a class="skip" href="#panel">Skip to controls</a>
+    <div id="app">
+      <aside id="panel" aria-label="Route planning and settings">
+        <header>
+          <h1>SonarNav <span class="tag">playground</span></h1>
+          <button id="audio-start" class="primary">Start audio</button>
+        </header>
+
+        <section aria-labelledby="h-route">
+          <h2 id="h-route">Route</h2>
+          <div class="field">
+            <label for="from">From</label>
+            <input id="from" type="search" autocomplete="off" placeholder="Current simulated position" aria-autocomplete="list" aria-controls="from-results" />
+            <ul id="from-results" class="results" role="listbox" aria-label="From suggestions"></ul>
+          </div>
+          <div class="field">
+            <label for="to">To</label>
+            <input id="to" type="search" autocomplete="off" placeholder="Search a place, or click the map" aria-autocomplete="list" aria-controls="to-results" />
+            <ul id="to-results" class="results" role="listbox" aria-label="To suggestions"></ul>
+          </div>
+          <fieldset class="segmented">
+            <legend>Travel by</legend>
+            <label><input type="radio" name="profile" value="bike" checked /> Bike</label>
+            <label><input type="radio" name="profile" value="foot" /> Walk</label>
+          </fieldset>
+          <div class="row">
+            <button id="plan" class="primary">Plan route</button>
+            <button id="clear">Clear</button>
+          </div>
+          <p id="route-summary" class="muted">No route yet.</p>
+        </section>
+
+        <section aria-labelledby="h-sim">
+          <h2 id="h-sim">Simulator</h2>
+          <div class="row">
+            <label for="heading-input">Heading (°)</label>
+            <input id="heading-input" type="number" min="0" max="359" step="1" value="0" />
+            <button id="heading-set">Set</button>
+          </div>
+          <div class="row">
+            <label for="snap">Snap</label>
+            <select id="snap">
+              <option value="off">Off (free movement)</option>
+              <option value="route">To route</option>
+              <option value="streets">To streets (OSM)</option>
+            </select>
+          </div>
+          <div class="row">
+            <label for="camera">Camera</label>
+            <select id="camera">
+              <option value="heading">Follow, heading-up</option>
+              <option value="north">Follow, north-up</option>
+              <option value="free">Free</option>
+            </select>
+          </div>
+          <label class="check"><input id="noise" type="checkbox" /> Simulate GPS noise (1 Hz, ±4 m)</label>
+        </section>
+
+        <section aria-labelledby="h-audio">
+          <h2 id="h-audio">Sound</h2>
+          <div class="row">
+            <label for="scheme">Scheme</label>
+            <select id="scheme"></select>
+          </div>
+          <p id="scheme-desc" class="muted small"></p>
+          <div class="slider"><label for="volume">Volume</label><input id="volume" type="range" min="0" max="1" step="0.05" /><output for="volume"></output></div>
+          <div class="slider"><label for="deadzone">Dead zone (±°)</label><input id="deadzone" type="range" min="0" max="30" step="1" /><output for="deadzone"></output></div>
+          <div class="slider"><label for="rate">Beep rate</label><input id="rate" type="range" min="0.5" max="2" step="0.1" /><output for="rate"></output></div>
+          <div class="slider"><label for="pitch">Pitch (Hz)</label><input id="pitch" type="range" min="300" max="1500" step="10" /><output for="pitch"></output></div>
+          <div class="slider"><label for="lookahead">Look-ahead (m)</label><input id="lookahead" type="range" min="5" max="60" step="1" /><output for="lookahead"></output></div>
+          <div class="slider"><label for="turnwarn">Turn preview (m)</label><input id="turnwarn" type="range" min="5" max="120" step="5" /><output for="turnwarn"></output></div>
+          <div class="row">
+            <label for="panmode">Panning</label>
+            <select id="panmode">
+              <option value="stereo">Stereo (left/right)</option>
+              <option value="hrtf">3D / HRTF (headphones)</option>
+            </select>
+          </div>
+          <label class="check"><input id="silent-aligned" type="checkbox" /> Silent when on course (no ticks)</label>
+          <label class="check"><input id="speech" type="checkbox" /> Speak status messages</label>
+        </section>
+
+        <section aria-labelledby="h-keys">
+          <h2 id="h-keys">Keys <span class="muted small">(press ? any time)</span></h2>
+          <dl id="keys" class="keys"></dl>
+        </section>
+      </aside>
+
+      <main id="map-wrap" aria-label="Map">
+        <div id="map"></div>
+        <div id="hud" aria-hidden="true"></div>
+        <div id="toast" aria-hidden="true"></div>
+      </main>
+    </div>
+    <div id="live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+    <dialog id="help" aria-labelledby="help-title">
+      <h2 id="help-title">Keyboard controls</h2>
+      <dl class="keys" id="help-keys"></dl>
+      <form method="dialog"><button class="primary">Close</button></form>
+    </dialog>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
