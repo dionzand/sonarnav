@@ -56,6 +56,14 @@ describe('cue mapping', () => {
     expect(far.azimuth).toBeCloseTo(40, 0);
     expect(far.pan).toBeCloseTo(40 / 90, 1);
     expect(near.interval).toBeLessThan(far.interval);
+    expect(near.gain).toBeGreaterThan(far.gain * 2);
+  });
+
+  it('ambient turn cue sits below the base note; classic stays high', () => {
+    const nav = new Navigator(r(), DEFAULT_NAV.bike);
+    const st = nav.update(destination(START, 90, 170), 90, 5, 0);
+    expect(turnPreview(st, DEFAULT_AUDIO, 'bike')!.freq).toBeCloseTo(DEFAULT_AUDIO.basePitch * 0.75);
+    expect(turnPreview(st, { ...DEFAULT_AUDIO, style: 'classic' }, 'bike')!.freq).toBeCloseTo(DEFAULT_AUDIO.basePitch * 1.5);
   });
 
   it('events-only scheme stays quiet when roughly on course', () => {

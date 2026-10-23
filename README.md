@@ -23,7 +23,7 @@ Use **headphones**. Click **Start audio** (or press Enter), then press **T** for
    - **Chime**: comes from the direction of the green beacon dot, a point just ahead on the route. Higher note means you're closer to dead-on, stepping down the scale as you veer off.
    - **Faint droplet**, every few seconds: you're on course (inside the dead zone).
    - **Deep low gong**: the route is behind you. The side it comes from is the way to turn.
-   - **Two-note chime**: a turn is coming, sounded at the turn's real angle, and it repeats faster as you get close. A falling pair means a sharp turn.
+   - **Two-note chime**: a turn is coming, sounded low (below the guidance chimes) from the turn's real angle. It starts quiet and sparse, then gets louder and more frequent as you approach. A falling pair means a sharp turn.
    - **Two falling, slightly clouded notes**: you're off the route. A new route is planned automatically, and a soft rising arpeggio confirms it.
    - **Long pentatonic arpeggio**: you've arrived.
 

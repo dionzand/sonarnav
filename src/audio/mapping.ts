@@ -78,7 +78,13 @@ export function isBehind(angle: number): boolean {
   return Math.abs(angle) > 90;
 }
 
-/** Turn-preview chirp: panned at the real turn angle, repeating faster as you close in. */
+/** Turn-cue repeat interval (s) when first announced → right at the corner, before `rate`. */
+const TURN_INTERVAL = { ambient: [3.2, 1.2], classic: [1.4, 0.3] } as const;
+
+/**
+ * Turn-preview cue: panned at the real turn angle. Distance is told twice:
+ * it repeats faster and swells from quiet to full volume as you close in.
+ */
 export function turnPreview(state: NavState, s: AudioSettings, profile: Profile): Cue | null {
   const next = state.next;
   if (!next || state.offRoute || state.arrived) return null;
@@ -88,19 +94,22 @@ export function turnPreview(state: NavState, s: AudioSettings, profile: Profile)
   const warn = s.turnWarn[profile];
   if (state.distanceToNext > warn || state.distanceToNext < 0) return null;
   const closeness = 1 - state.distanceToNext / warn; // 0 at warn distance → 1 at the turn
-  const interval = (1.4 - 1.1 * closeness) / pace(s); // 1.4 s → 0.3 s (classic)
+  const [far, near] = TURN_INTERVAL[s.style];
+  const interval = (far - (far - near) * closeness) / s.rate;
   const sharp = Math.abs(next.angle) > 120;
-  const f = s.basePitch * 1.5;
+  // Ambient: a fifth below the base note, so it sits under the guidance chimes.
+  const f = s.basePitch * (s.style === 'ambient' ? 0.75 : 1.5);
   return {
     kind: 'chirp',
     azimuth: next.angle,
     pan: panFor(next.angle),
     freq: f,
-    // Sharp turns and U-turns glide down a fifth; normal turns step up a fourth.
+    // Sharp turns and U-turns step down a fifth; normal turns step up a fourth.
     freq2: sharp ? f / 1.5 : f * 1.335,
     timbre: 'triangle',
     duration: 0.16,
-    gain: 0.55,
+    // Loudness grows with closeness (slightly curved so the last metres stand out).
+    gain: 0.18 + 0.45 * Math.pow(closeness, 1.3),
     interval,
   };
 }

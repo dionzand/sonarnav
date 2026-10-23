@@ -74,7 +74,7 @@ export function renderHud(el: HTMLElement, h: HudInfo): void {
           : `tone ${Math.round(g.freq)} Hz · ${g.timbre}`
         : 'silent';
   rows.push(['sound', audio]);
-  if (m) rows.push(['turn cue', `chirp every ${m.interval.toFixed(2)} s`]);
+  if (m) rows.push(['turn cue', `${Math.round(m.freq)}→${Math.round(m.freq2 ?? m.freq)} Hz · every ${m.interval.toFixed(1)} s · vol ${Math.round((m.gain / 0.63) * 100)}%`]);
 
   const pans = [g ? `<i style="left:${((g.pan + 1) / 2) * 100}%"></i>` : '', m ? `<i class="turn" style="left:${((m.pan + 1) / 2) * 100}%"></i>` : ''].join('');
 
