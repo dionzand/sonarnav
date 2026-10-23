@@ -16,7 +16,8 @@ import { announce, setSpeech } from './ui/a11y';
 import { attachSearch } from './ui/search';
 
 // ---------- persisted settings (per browser; safe if storage is unavailable) ----------
-const STORE_KEY = 'sonarnav.v1';
+// v2: new ambient defaults (lower pitch); don't carry over v1's 880 Hz.
+const STORE_KEY = 'sonarnav.v2';
 interface Saved {
   audio?: Partial<AudioSettings>;
   nav?: Partial<Record<Profile, Partial<NavSettings>>>;
@@ -263,6 +264,13 @@ for (const s of sliders) {
 }
 syncSliders();
 
+const styleSel = $<HTMLSelectElement>('style');
+styleSel.value = audioSettings.style;
+styleSel.addEventListener('change', () => {
+  audio.setStyle(styleSel.value as AudioSettings['style']);
+  save();
+});
+
 const panSel = $<HTMLSelectElement>('panmode');
 panSel.value = audioSettings.panMode;
 panSel.addEventListener('change', () => {
@@ -456,20 +464,31 @@ function handleEvents(state: NavState): void {
   }
 }
 
-function frame(now: number): void {
-  const dt = Math.min(0.1, (now - lastFrame) / 1000);
+// Simulation, navigation and audio run on a timer, not on animation frames: browsers
+// throttle rAF to ~1 fps when the window is covered, and you should be able to keep
+// listening with the map hidden behind other windows.
+function step(): void {
+  const now = performance.now();
+  let dt = Math.min(0.5, (now - lastFrame) / 1000);
   lastFrame = now;
-  sim.tick(dt);
+  while (dt > 0) {
+    const h = Math.min(dt, 0.05);
+    sim.tick(h);
+    dt -= h;
+  }
   const fix = gps.current(now / 1000);
-
   if (nav && route && fix) {
     navState = nav.update(fix.position, normalize360(fix.heading), fix.speed, now / 1000);
     handleEvents(navState);
-    map.updateManeuvers(route, navState.next ? route.maneuvers.indexOf(navState.next) : -1);
   } else {
     navState = null;
   }
   audio.setState(navState);
+}
+setInterval(step, 20);
+
+function frame(now: number): void {
+  if (route && navState) map.updateManeuvers(route, navState.next ? route.maneuvers.indexOf(navState.next) : -1);
   map.updateWalker(sim.position, sim.heading);
   map.updateNav(navState);
 

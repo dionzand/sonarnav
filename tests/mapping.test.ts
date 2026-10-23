@@ -26,6 +26,14 @@ describe('cue mapping', () => {
     expect(pitchFor(-45, 880)).toBeCloseTo(880 / Math.SQRT2);
   });
 
+  it('ambient pitch steps through pentatonic notes', () => {
+    expect(pitchFor(0, 440, true)).toBe(440);
+    expect(pitchFor(45, 440, true)).toBeCloseTo(440 * 2 ** (-5 / 12)); // 6 semitones → nearest is a fourth
+    expect(pitchFor(90, 440, true)).toBeCloseTo(220);
+    // Small angle changes inside one step keep the same note.
+    expect(pitchFor(20, 440, true)).toBe(pitchFor(25, 440, true));
+  });
+
   it('beacon 45° right gives pan +0.5; on course a soft tick; behind a buzz', () => {
     const nav = new Navigator(r(), DEFAULT_NAV.bike);
     const p = destination(START, 90, 50);

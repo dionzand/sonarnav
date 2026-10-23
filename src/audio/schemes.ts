@@ -32,9 +32,9 @@ export const SCHEMES: CueScheme[] = [
     id: 'beacon',
     name: 'Beacon',
     description:
-      'Beeps come from the direction of a point just ahead on your route. Higher pitch = more on course. ' +
-      'A soft tick means you are on course. A low buzz means the route is behind you. ' +
-      'Before a turn, a chirp sounds from the real turn angle and repeats faster as you get closer.',
+      'Notes come from the direction of a point just ahead on your route. Higher note = more on course. ' +
+      'A faint droplet means you are on course. A deep, low note means the route is behind you. ' +
+      'Before a turn, a two-note cue sounds from the real turn angle and repeats faster as you get closer.',
     guidance: (st, s) => beaconBeep(st, s),
     maneuver: (st, s, p) => turnPreview(st, s, p),
   },
@@ -43,7 +43,7 @@ export const SCHEMES: CueScheme[] = [
     name: 'Continuous tone',
     description:
       'One steady tone that follows the beacon: its stereo position shows the direction and its pitch shows how far off course you are. ' +
-      'It gets quiet when you are on course. Turn chirps work as in Beacon.',
+      'It gets quiet when you are on course. Turn cues work as in Beacon.',
     tone: (st, s) => {
       if (st.arrived) return null;
       const r = st.relBearing;
@@ -63,8 +63,8 @@ export const SCHEMES: CueScheme[] = [
     id: 'events',
     name: 'Events only',
     description:
-      'Silent while you are roughly on course. Beeps only start when you drift more than twice the dead zone off, ' +
-      'and turn chirps sound before each turn.',
+      'Silent while you are roughly on course. Notes only start when you drift more than twice the dead zone off, ' +
+      'and turn cues sound before each turn.',
     guidance: (st, s) => {
       if (Math.abs(st.relBearing) <= s.deadZone * 2 && !st.offRoute) return null;
       return beaconBeep(st, s);

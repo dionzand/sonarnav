@@ -4,6 +4,8 @@ import { MIN_TURN_ANGLE, Profile } from '../core/route';
 export type Timbre = OscillatorType;
 
 export interface AudioSettings {
+  /** Ambient: soft chimes with reverb, pentatonic pitches, calmer pace. Classic: crisp beeps. */
+  style: 'ambient' | 'classic';
   volume: number; // 0..1
   /** ± degrees treated as "on course". */
   deadZone: number;
@@ -20,11 +22,12 @@ export interface AudioSettings {
 }
 
 export const DEFAULT_AUDIO: AudioSettings = {
+  style: 'ambient',
   volume: 0.6,
   deadZone: 10,
   silentWhenAligned: false,
   rate: 1,
-  basePitch: 880,
+  basePitch: 440,
   panMode: 'stereo',
   turnWarn: { foot: 20, bike: 50 },
 };
@@ -51,10 +54,24 @@ export function panFor(angle: number): number {
   return Math.max(-1, Math.min(1, angle / 90));
 }
 
-/** Pitch falls one octave between dead-ahead and 90° off. */
-export function pitchFor(angle: number, base: number): number {
-  const off = Math.min(90, Math.abs(angle));
-  return base * Math.pow(2, -off / 90);
+// Major pentatonic, descending from the base note: every step stays consonant.
+const PENTATONIC_DOWN = [0, 3, 5, 8, 10, 12];
+
+/**
+ * Pitch falls one octave between dead-ahead and 90° off. With `scale`, it steps
+ * through pentatonic notes instead of sliding, so it sounds musical rather than alarming.
+ */
+export function pitchFor(angle: number, base: number, scale = false): number {
+  const semis = (Math.min(90, Math.abs(angle)) / 90) * 12;
+  const step = scale
+    ? PENTATONIC_DOWN.reduce((best, s) => (Math.abs(s - semis) < Math.abs(best - semis) ? s : best))
+    : semis;
+  return base * Math.pow(2, -step / 12);
+}
+
+/** Ambient style breathes slower than classic beeps. */
+function pace(s: AudioSettings): number {
+  return s.rate / (s.style === 'ambient' ? 1.6 : 1);
 }
 
 export function isBehind(angle: number): boolean {
@@ -71,7 +88,7 @@ export function turnPreview(state: NavState, s: AudioSettings, profile: Profile)
   const warn = s.turnWarn[profile];
   if (state.distanceToNext > warn || state.distanceToNext < 0) return null;
   const closeness = 1 - state.distanceToNext / warn; // 0 at warn distance → 1 at the turn
-  const interval = (1.4 - 1.1 * closeness) / s.rate; // 1.4 s → 0.3 s
+  const interval = (1.4 - 1.1 * closeness) / pace(s); // 1.4 s → 0.3 s (classic)
   const sharp = Math.abs(next.angle) > 120;
   const f = s.basePitch * 1.5;
   return {
@@ -103,7 +120,7 @@ export function beaconBeep(state: NavState, s: AudioSettings): Cue | null {
       timbre: 'sawtooth',
       duration: 0.18,
       gain: 0.35,
-      interval: 0.45 / s.rate,
+      interval: 0.45 / pace(s),
     };
   }
   if (a <= s.deadZone && !state.offRoute) {
@@ -116,20 +133,20 @@ export function beaconBeep(state: NavState, s: AudioSettings): Cue | null {
       timbre: 'sine',
       duration: 0.035,
       gain: 0.25,
-      interval: 1.6 / s.rate,
+      interval: 1.6 / pace(s),
     };
   }
   return {
     kind: 'beep',
     azimuth: r,
     pan: panFor(r),
-    freq: pitchFor(r, s.basePitch),
+    freq: pitchFor(r, s.basePitch, s.style === 'ambient'),
     // A square wave tells you you're off the route while still pointing back to it.
     timbre: state.offRoute ? 'square' : 'sine',
     duration: 0.09,
     gain: state.offRoute ? 0.3 : 0.5,
     // More urgent the further off you are.
-    interval: (0.75 - 0.4 * Math.min(1, a / 90)) / s.rate,
+    interval: (0.75 - 0.4 * Math.min(1, a / 90)) / pace(s),
   };
 }
 

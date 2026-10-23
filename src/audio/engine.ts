@@ -2,16 +2,20 @@ import { NavState } from '../core/navigator';
 import { Profile } from '../core/route';
 import { AudioSettings, Cue, panFor } from './mapping';
 import { CueScheme, ToneParams } from './schemes';
-import { chirp, noiseBurst, notes, spatializer, tone } from './synth';
+import { chime, chirp, noiseBurst, notes, reverbImpulse, spatializer, tone } from './synth';
 
 export type AudioEvent = 'offRoute' | 'backOnRoute' | 'arrived' | 'rerouted' | 'maneuverPassed';
 
 interface Voice {
   osc: OscillatorNode;
+  filter: BiquadFilterNode;
   gain: GainNode;
   pan: StereoPannerNode | PannerNode;
   mode: AudioSettings['panMode'];
 }
+
+/** Reverb send level per style: a soft room for ambient, dry for classic. */
+const WET = { ambient: 0.32, classic: 0 };
 
 /**
  * Drives the cue scheme from the latest NavState. A 25 ms timer schedules each stream's
@@ -20,12 +24,17 @@ interface Voice {
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  /** Everything audible goes here: it feeds the master directly and through the reverb. */
+  private bus: GainNode | null = null;
+  private wet: GainNode | null = null;
   private timer: number | null = null;
   private state: NavState | null = null;
   private nextGuidance = 0;
   private nextManeuver = 0;
   private voice: Voice | null = null;
   private busyUntil = 0; // suppress guidance while an event sound plays
+  private lastPlayedKind: Cue['kind'] | null = null;
+  private lastPlayedAt = 0;
 
   muted = false;
   lastGuidance: Cue | ToneParams | null = null;
@@ -41,13 +50,22 @@ export class AudioEngine {
     return this.ctx?.state === 'running';
   }
 
+  private get ambient(): boolean {
+    return this.settings.style === 'ambient';
+  }
+
   /** Must be called from a user gesture (browser autoplay rules). */
   async start(): Promise<void> {
     if (!this.ctx) {
-      this.ctx = new AudioContext({ latencyHint: 'interactive' });
-      this.master = new GainNode(this.ctx, { gain: this.settings.volume });
-      const comp = new DynamicsCompressorNode(this.ctx, { threshold: -12, ratio: 4 });
-      this.master.connect(comp).connect(this.ctx.destination);
+      const ctx = (this.ctx = new AudioContext({ latencyHint: 'interactive' }));
+      this.master = new GainNode(ctx, { gain: this.settings.volume });
+      const comp = new DynamicsCompressorNode(ctx, { threshold: -12, ratio: 4 });
+      this.master.connect(comp).connect(ctx.destination);
+      this.bus = new GainNode(ctx);
+      this.bus.connect(this.master);
+      this.wet = new GainNode(ctx, { gain: WET[this.settings.style] });
+      const reverb = new ConvolverNode(ctx, { buffer: reverbImpulse(ctx, 2.8) });
+      this.bus.connect(reverb).connect(this.wet).connect(this.master);
     }
     await this.ctx.resume();
     this.timer ??= window.setInterval(() => this.schedule(), 25);
@@ -63,6 +81,11 @@ export class AudioEngine {
     this.nextGuidance = this.nextManeuver = 0;
   }
 
+  setStyle(style: AudioSettings['style']): void {
+    this.settings.style = style;
+    if (this.ctx && this.wet) this.wet.gain.setTargetAtTime(WET[style], this.ctx.currentTime, 0.1);
+  }
+
   setVolume(v: number): void {
     this.settings.volume = v;
     if (this.ctx && this.master) this.master.gain.setTargetAtTime(this.muted ? 0 : v, this.ctx.currentTime, 0.02);
@@ -76,7 +99,7 @@ export class AudioEngine {
   private schedule(): void {
     const ctx = this.ctx;
     const st = this.state;
-    if (!ctx || !this.master) return;
+    if (!ctx || !this.bus) return;
     const now = ctx.currentTime;
     const ahead = 0.05;
     if (!st) {
@@ -91,11 +114,23 @@ export class AudioEngine {
       const p = now < this.busyUntil ? null : this.scheme.tone(st, s);
       this.updateVoice(p);
       this.lastGuidance = p;
-    } else if (this.scheme.guidance && now + ahead >= this.nextGuidance) {
+    } else if (this.scheme.guidance) {
+      const due = now + ahead >= this.nextGuidance;
       const cue = now < this.busyUntil ? null : this.scheme.guidance(st, s, profile);
-      this.lastGuidance = cue;
-      if (cue && cue.gain > 0) this.play(cue, Math.max(now + 0.01, this.nextGuidance));
-      this.nextGuidance = Math.max(now, this.nextGuidance) + (cue?.interval ?? 0.2);
+      // Slow cues (e.g. the on-course droplet every few seconds) must not delay news:
+      // when the kind of cue changes, play it right away instead of waiting the interval out.
+      const changed =
+        !!cue && cue.gain > 0 && cue.kind !== this.lastPlayedKind && now - this.lastPlayedAt > 0.35;
+      if (due || changed) {
+        this.lastGuidance = cue;
+        const t = changed && !due ? now + 0.01 : Math.max(now + 0.01, this.nextGuidance);
+        if (cue && cue.gain > 0) {
+          this.play(cue, t);
+          this.lastPlayedKind = cue.kind;
+          this.lastPlayedAt = t;
+        }
+        this.nextGuidance = Math.max(now, changed && !due ? now : this.nextGuidance) + (cue?.interval ?? 0.2);
+      }
     }
 
     if (now + ahead >= this.nextManeuver) {
@@ -104,17 +139,44 @@ export class AudioEngine {
       if (cue) {
         const t = Math.max(now + 0.01, this.nextManeuver);
         this.play(cue, t);
-        // Keep the guidance beep from landing on top of the chirp.
-        this.nextGuidance = Math.max(this.nextGuidance, t + cue.duration + 0.08);
+        // Keep the guidance cue from landing on top of the turn cue.
+        this.nextGuidance = Math.max(this.nextGuidance, t + cue.duration + (this.ambient ? 0.3 : 0.08));
       }
       this.nextManeuver = Math.max(now, this.nextManeuver) + (cue?.interval ?? 0.2);
     }
   }
 
+  /** A spatializer placed at the cue's direction, feeding the bus. */
+  private placed(azimuth: number, pan: number): AudioNode {
+    const node = spatializer(this.ctx!, this.settings.panMode, azimuth, pan);
+    node.connect(this.bus!);
+    return node;
+  }
+
   private play(cue: Cue, t: number): void {
     const ctx = this.ctx!;
-    const dest = spatializer(ctx, this.settings.panMode, cue.azimuth, cue.pan);
-    dest.connect(this.master!);
+    const dest = this.placed(cue.azimuth, cue.pan);
+    if (this.ambient) {
+      const g = cue.gain;
+      switch (cue.kind) {
+        case 'beep':
+          chime(ctx, dest, t, { freq: cue.freq, gain: g * 0.8, decay: 1.2, bright: 0.4, uneasy: cue.timbre === 'square' });
+          break;
+        case 'tick':
+          // A faint droplet an octave up: "all good", barely there.
+          chime(ctx, dest, t, { freq: cue.freq * 2, gain: g * 0.35, decay: 0.45, bright: 0 });
+          break;
+        case 'behind':
+          // A low, warm gong on the side to turn towards.
+          chime(ctx, dest, t, { freq: cue.freq, gain: g * 1.4, decay: 1.8, bright: 0.9 });
+          break;
+        case 'chirp':
+          chime(ctx, dest, t, { freq: cue.freq, gain: g * 0.6, decay: 0.9, bright: 0.5 });
+          chime(ctx, dest, t + 0.15, { freq: cue.freq2 ?? cue.freq, gain: g * 0.6, decay: 1.1, bright: 0.5 });
+          break;
+      }
+      return;
+    }
     const spec = { freq: cue.freq, freq2: cue.freq2, type: cue.timbre, duration: cue.duration, gain: cue.gain };
     if (cue.kind === 'chirp') chirp(ctx, dest, t, spec);
     else tone(ctx, dest, t, spec);
@@ -126,21 +188,26 @@ export class AudioEngine {
     if (this.voice && this.voice.mode !== mode) this.stopVoice();
     if (!this.voice) {
       const osc = new OscillatorNode(ctx, { type: 'sine', frequency: 440 });
+      const filter = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 20000, Q: 0.3 });
       const gain = new GainNode(ctx, { gain: 0 });
       const pan = spatializer(ctx, mode, 0, 0) as StereoPannerNode | PannerNode;
-      osc.connect(gain).connect(pan).connect(this.master!);
+      osc.connect(filter).connect(gain).connect(pan).connect(this.bus!);
       osc.start();
-      this.voice = { osc, gain, pan, mode };
+      this.voice = { osc, filter, gain, pan, mode };
     }
     const v = this.voice;
     const t = ctx.currentTime;
-    const tc = 0.05;
+    // Ambient glides slowly between states; classic follows quickly.
+    const tc = this.ambient ? 0.25 : 0.05;
     if (!p) {
       v.gain.gain.setTargetAtTime(0, t, tc);
       return;
     }
-    if (v.osc.type !== p.timbre) v.osc.type = p.timbre;
-    const level = p.timbre === 'sine' ? p.gain : p.gain * 0.45;
+    // Ambient: harsh waveforms become a soft, filtered triangle.
+    const type = this.ambient && p.timbre !== 'sine' ? 'triangle' : p.timbre;
+    if (v.osc.type !== type) v.osc.type = type;
+    v.filter.frequency.setTargetAtTime(this.ambient ? p.freq * 2.5 : 20000, t, tc);
+    const level = type === 'sine' || type === 'triangle' ? p.gain : p.gain * 0.45;
     v.gain.gain.setTargetAtTime(level, t, tc);
     v.osc.frequency.setTargetAtTime(p.freq, t, tc);
     if (v.pan instanceof StereoPannerNode) {
@@ -163,11 +230,37 @@ export class AudioEngine {
   /** One-off sounds for navigation events. */
   event(e: AudioEvent): void {
     const ctx = this.ctx;
-    if (!ctx || !this.master) return;
+    if (!ctx || !this.bus) return;
     const t = ctx.currentTime + 0.02;
-    const center = spatializer(ctx, this.settings.panMode, 0, 0);
-    center.connect(this.master);
+    const center = this.placed(0, 0);
     const b = this.settings.basePitch / 2;
+    if (this.ambient) {
+      // Pentatonic intervals only (ratios of the major pentatonic), so events blend in.
+      const seq = (ratios: number[], step: number, gain: number, decay: number, uneasy = false) =>
+        ratios.forEach((r, i) => chime(ctx, center, t + i * step, { freq: b * r, gain, decay, bright: 0.5, uneasy }));
+      switch (e) {
+        case 'offRoute':
+          // Two falling, slightly clouded notes: "hm, not this way".
+          seq([1.5, 1.189], 0.22, 0.45, 1.4, true);
+          this.busyUntil = t + 0.8;
+          break;
+        case 'backOnRoute':
+          seq([1, 1.5], 0.18, 0.35, 1.2);
+          break;
+        case 'rerouted':
+          seq([1, 1.25, 1.5], 0.07, 0.3, 1.6);
+          this.busyUntil = t + 0.8;
+          break;
+        case 'arrived':
+          seq([1, 1.125, 1.25, 1.5, 1.667, 2], 0.16, 0.35, 2);
+          this.busyUntil = t + 1.6;
+          break;
+        case 'maneuverPassed':
+          chime(ctx, center, t, { freq: b * 3, gain: 0.08, decay: 0.4, bright: 0 });
+          break;
+      }
+      return;
+    }
     switch (e) {
       case 'offRoute':
         noiseBurst(ctx, center, t, 0.35, 0.6);
@@ -194,19 +287,20 @@ export class AudioEngine {
   /** Orientation check: left, half-left, ahead, half-right, right, behind. */
   testSweep(): void {
     const ctx = this.ctx;
-    if (!ctx || !this.master) return;
+    if (!ctx || !this.bus) return;
+    const gap = this.ambient ? 0.7 : 0.45;
     const t0 = ctx.currentTime + 0.05;
+    const base = this.settings.basePitch;
     [-90, -45, 0, 45, 90, 180].forEach((az, i) => {
       const behind = Math.abs(az) > 90;
-      const dest = spatializer(ctx, this.settings.panMode, az, behind ? 0 : panFor(az));
-      dest.connect(this.master!);
-      tone(ctx, dest, t0 + i * 0.45, {
-        freq: behind ? this.settings.basePitch / 4 : this.settings.basePitch,
-        type: behind ? 'sawtooth' : 'sine',
-        duration: 0.15,
-        gain: 0.5,
-      });
+      const dest = this.placed(az, behind ? 0 : panFor(az));
+      const t = t0 + i * gap;
+      if (this.ambient) {
+        chime(ctx, dest, t, behind ? { freq: base / 4, gain: 0.5, decay: 1.8, bright: 0.9 } : { freq: base, gain: 0.4, decay: 1.2, bright: 0.4 });
+      } else {
+        tone(ctx, dest, t, { freq: behind ? base / 4 : base, type: behind ? 'sawtooth' : 'sine', duration: 0.15, gain: 0.5 });
+      }
     });
-    this.busyUntil = t0 + 6 * 0.45;
+    this.busyUntil = t0 + 6 * gap;
   }
 }

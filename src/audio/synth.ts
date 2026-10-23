@@ -71,6 +71,57 @@ export function noiseBurst(ctx: AudioContext, dest: AudioNode, t: number, durati
   src.start(t);
 }
 
+export interface ChimeSpec {
+  freq: number;
+  gain: number;
+  /** Seconds until the chime has mostly faded. */
+  decay: number;
+  /** 0 = pure and round, 1 = a little more shimmer. */
+  bright?: number;
+  /** Add a quietly beating neighbour partial: gently "uneasy" (used when off route). */
+  uneasy?: boolean;
+}
+
+// Near-harmonic partials (a soft bell / kalimba). Higher partials are quieter and die faster.
+const PARTIALS = [
+  { ratio: 1, gain: 1, decay: 1 },
+  { ratio: 2.0, gain: 0.28, decay: 0.55 },
+  { ratio: 3.01, gain: 0.09, decay: 0.35 },
+  { ratio: 4.2, gain: 0.035, decay: 0.2 },
+];
+
+/** Soft, round chime: gentle attack, long exponential tail, low-passed. */
+export function chime(ctx: AudioContext, dest: AudioNode, t: number, spec: ChimeSpec): void {
+  const bright = spec.bright ?? 0.5;
+  const lp = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: Math.min(6000, spec.freq * (3 + 4 * bright)), Q: 0.3 });
+  lp.connect(dest);
+  const partials = spec.uneasy ? [...PARTIALS, { ratio: 1.059, gain: 0.45, decay: 0.8 }] : PARTIALS;
+  for (const p of partials) {
+    const level = spec.gain * p.gain * (p.ratio > 1.5 ? 0.4 + bright : 1);
+    if (level < 0.002) continue;
+    const osc = new OscillatorNode(ctx, { type: 'sine', frequency: spec.freq * p.ratio });
+    const g = new GainNode(ctx, { gain: 0 });
+    const decay = spec.decay * p.decay;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + 0.012);
+    g.gain.setTargetAtTime(0, t + 0.012, decay / 4);
+    osc.connect(g).connect(lp);
+    osc.start(t);
+    osc.stop(t + decay * 1.5 + 0.1);
+  }
+}
+
+/** A synthetic room: stereo noise with an exponential tail, for a soft ambient wash. */
+export function reverbImpulse(ctx: AudioContext, seconds: number): AudioBuffer {
+  const len = Math.ceil(ctx.sampleRate * seconds);
+  const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  }
+  return buf;
+}
+
 /** Notes played in sequence (motifs) or together (chords) when `step` is 0. */
 export function notes(
   ctx: AudioContext,

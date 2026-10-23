@@ -19,14 +19,16 @@ Use **headphones**. Click **Start audio** (or press Enter), then press **T** for
 1. Type a destination in **To** (or click the map). The route is planned from your position (the blue arrow).
    Right-click the map to move yourself. **From** lets you search a start point.
 2. Press **↑** to start moving. Speed holds when you release the key. Steer with **← / →**.
-3. Listen:
-   - **Beep**: comes from the direction of the green beacon dot, a point just ahead on the route. Higher pitch means you're closer to dead-on.
-   - **Soft tick**: you're on course (inside the dead zone).
-   - **Low buzz**: the route is behind you. The side it comes from is the way to turn.
-   - **Two-tone chirp**: a turn is coming, sounded at the turn's real angle, and it repeats faster as you get close. If it glides down, it's a sharp turn.
-   - **Noise burst**: you're off the route. A new route is planned automatically, and a chord confirms it.
-   - **Rising arpeggio**: you've arrived.
-4. Tune everything in the **Sound** panel and compare the schemes (Beacon / Continuous tone / Events only).
+3. Listen. The default **Ambient chimes** style uses soft bell tones with a little reverb, all on a pentatonic scale:
+   - **Chime**: comes from the direction of the green beacon dot, a point just ahead on the route. Higher note means you're closer to dead-on, stepping down the scale as you veer off.
+   - **Faint droplet**, every few seconds: you're on course (inside the dead zone).
+   - **Deep low gong**: the route is behind you. The side it comes from is the way to turn.
+   - **Two-note chime**: a turn is coming, sounded at the turn's real angle, and it repeats faster as you get close. A falling pair means a sharp turn.
+   - **Two falling, slightly clouded notes**: you're off the route. A new route is planned automatically, and a soft rising arpeggio confirms it.
+   - **Long pentatonic arpeggio**: you've arrived.
+
+   When the situation changes (you drift off course, for example), the cue switches right away instead of waiting out the slow ambient rhythm.
+4. Tune everything in the **Sound** panel. Compare the schemes (Beacon / Continuous tone / Events only) and the styles (Ambient chimes / Classic beeps).
 
 ## Heading control
 

@@ -71,10 +71,17 @@
             <select id="scheme"></select>
           </div>
           <p id="scheme-desc" class="muted small"></p>
+          <div class="row">
+            <label for="style">Sound style</label>
+            <select id="style">
+              <option value="ambient">Ambient chimes</option>
+              <option value="classic">Classic beeps</option>
+            </select>
+          </div>
           <div class="slider"><label for="volume">Volume</label><input id="volume" type="range" min="0" max="1" step="0.05" /><output for="volume"></output></div>
           <div class="slider"><label for="deadzone">Dead zone (±°)</label><input id="deadzone" type="range" min="0" max="30" step="1" /><output for="deadzone"></output></div>
           <div class="slider"><label for="rate">Beep rate</label><input id="rate" type="range" min="0.5" max="2" step="0.1" /><output for="rate"></output></div>
-          <div class="slider"><label for="pitch">Pitch (Hz)</label><input id="pitch" type="range" min="300" max="1500" step="10" /><output for="pitch"></output></div>
+          <div class="slider"><label for="pitch">Pitch (Hz)</label><input id="pitch" type="range" min="200" max="1200" step="10" /><output for="pitch"></output></div>
           <div class="slider"><label for="lookahead">Look-ahead (m)</label><input id="lookahead" type="range" min="5" max="60" step="1" /><output for="lookahead"></output></div>
           <div class="slider"><label for="turnwarn">Turn preview (m)</label><input id="turnwarn" type="range" min="5" max="120" step="5" /><output for="turnwarn"></output></div>
           <div class="row">
