@@ -31,6 +31,8 @@ export interface AudioSettings {
   breeze: boolean;
   /** "Keep straight" cues at junctions without a turn: never, only at easy-to-miss forks, or always. */
   junctions: 'off' | 'forks' | 'all';
+  /** Sound of the turn cue in ambient style: a soft purring "prrr", a dry rattle, or chimes. */
+  turnSound: 'purr' | 'rattle' | 'chime';
 }
 
 export const DEFAULT_AUDIO: AudioSettings = {
@@ -46,6 +48,7 @@ export const DEFAULT_AUDIO: AudioSettings = {
   soundscape: 0.5,
   breeze: true,
   junctions: 'forks',
+  turnSound: 'purr',
 };
 
 /** Target state of the continuous background soundscape. */

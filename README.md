@@ -25,10 +25,11 @@ Use **headphones**. Click **Start audio** (or press Enter), then press **T** for
      - On a curving road, "on course" means following the road's own direction where you are, so walking an arc stays quiet.
    - **Faint droplet**, about every 6 s: you're on course (within ±15°).
    - **Deep low gong**: the route is behind you. The side it comes from is the way to turn.
-   - **Rattle ("trrk-trrk")**: a turn is coming.
-     - It's a dry, woodblock-like rattle from the turn's real direction, with the second strike **higher for a right turn, lower for a left turn**.
-     - It speeds up like a parking sensor (sparse → rapid), climbs in pitch and swells as you approach.
+   - **Soft purr ("prrr")**: a turn is coming.
+     - It's a warm, low tone with a gentle flutter, sounding from the turn's real direction and gliding **up for a right turn, down for a left turn**.
+     - It repeats faster like a parking sensor (sparse → rapid), climbs in pitch and swells as you approach.
      - A soft open chord resolves it once you're through the turn.
+     - **Preview turn cue** (Sound panel) plays a full approach to a right turn and then a left turn. **Turn sound** switches to a dry rattle or chimes instead.
    - **Two falling, slightly clouded notes**: you're off the route. A new route is planned automatically, and a soft rising arpeggio confirms it.
    - **Long pentatonic arpeggio**: you've arrived.
 

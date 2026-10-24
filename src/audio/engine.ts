@@ -1,9 +1,9 @@
 import { NavState } from '../core/navigator';
 import { Profile } from '../core/route';
-import { AudioSettings, CourseGate, Cue, panFor, pitchFor, soundscapeFor } from './mapping';
+import { AudioSettings, CourseGate, Cue, panFor, pitchFor, soundscapeFor, turnPreview } from './mapping';
 import { CueScheme, ToneParams } from './schemes';
 import { Soundscape } from './soundscape';
-import { Spatial, chime, chirp, createSpatial, noiseBurst, notes, rattle, reverbImpulse, tone } from './synth';
+import { Spatial, chime, chirp, createSpatial, noiseBurst, notes, purr, rattle, reverbImpulse, tone } from './synth';
 
 export type AudioEvent = 'offRoute' | 'backOnRoute' | 'arrived' | 'rerouted' | 'maneuverPassed';
 
@@ -193,12 +193,15 @@ export class AudioEngine {
     const ctx = this.ctx!;
     const sp = this.placed(cue.azimuth, cue.pan);
     const dest = sp.input;
+    const purring = this.ambient && cue.kind === 'chirp' && this.settings.turnSound === 'purr';
+    // A purr fills a good part of its slot (shorter as the rhythm speeds up, so purrs never merge).
+    const purrLength = Math.min(0.45, Math.max(0.16, cue.interval * 0.55));
     if (cue.kind === 'chirp') {
-      // "Pointing": the first note sounds near the centre, the second at the turn's direction,
-      // so the cue audibly moves the way you'll go.
-      const second = t + (this.ambient ? 0.15 : cue.duration / 2 + 0.025);
+      // "Pointing": the cue starts near the centre and moves to the turn's direction,
+      // so it audibly goes the way you'll go. A purr glides there; two-part cues step.
       sp.set(cue.azimuth * 0.3, cue.pan * 0.3, t);
-      sp.set(cue.azimuth, cue.pan, second - 0.01);
+      if (purring) sp.set(cue.azimuth, cue.pan, t + 0.02, purrLength / 3);
+      else sp.set(cue.azimuth, cue.pan, t + (this.ambient ? 0.15 : cue.duration / 2 + 0.025) - 0.01);
     }
     if (this.ambient) {
       if (cue.kind !== 'tick') this.scape?.duck(t);
@@ -216,11 +219,18 @@ export class AudioEngine {
           chime(ctx, dest, t, { freq: cue.freq, gain: g * 1.4, decay: 1.8, bright: 0.9 });
           break;
         case 'chirp':
-          // Turn: a dry rattle pair ("trrk-trrk"), parking-sensor style. No ringing tail, so
-          // the rapid build-up near the corner stays crisp. The second strike is higher for
-          // a right turn, lower for a left one, and sounds from the turn's direction.
-          rattle(ctx, dest, t, { freq: cue.freq, gain: g * 0.9 });
-          rattle(ctx, dest, t + 0.15, { freq: cue.freq2 ?? cue.freq, gain: g * 0.9 });
+          // Turn cue, repeating parking-sensor style. Direction: from the turn's side, and
+          // up in pitch for a right turn, down for a left one.
+          if (purring) {
+            // A soft "prrr", an octave down, gliding towards the second pitch.
+            purr(ctx, dest, t, { freq: cue.freq / 2, freq2: (cue.freq2 ?? cue.freq) / 2, gain: g * 0.9, duration: purrLength });
+          } else if (this.settings.turnSound === 'rattle') {
+            rattle(ctx, dest, t, { freq: cue.freq, gain: g * 0.9 });
+            rattle(ctx, dest, t + 0.15, { freq: cue.freq2 ?? cue.freq, gain: g * 0.9 });
+          } else {
+            chime(ctx, dest, t, { freq: cue.freq, gain: g * 0.6, decay: cue.duration * 5.5, bright: 0.5 });
+            chime(ctx, dest, t + 0.15, { freq: cue.freq2 ?? cue.freq, gain: g * 0.6, decay: cue.duration * 7, bright: 0.5 });
+          }
           break;
         case 'straight':
           // Level notes from straight ahead: "keep going".
@@ -337,6 +347,40 @@ export class AudioEngine {
         notes(ctx, center, t, [b * 2, b * 3], 0.06, 0.1, 0.25);
         break;
     }
+  }
+
+  /**
+   * Preview of a turn cue's full build-up: an approach to a right turn, then to a left one,
+   * using the real cue logic (rhythm, pitch, volume, direction).
+   */
+  testTurn(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.bus) return;
+    const profile = this.profile();
+    const warn = this.settings.turnWarn[profile];
+    let t = ctx.currentTime + 0.1;
+    for (const angle of [70, -70]) {
+      let closeness = 0;
+      while (closeness <= 1) {
+        // A minimal state "approaching a turn of `angle` degrees".
+        const st = {
+          next: { angle, along: 0, location: [0, 0], type: 'turn', name: '' },
+          distanceToNext: warn * (1 - closeness),
+          relBearing: 0,
+          offRoute: false,
+          arrived: false,
+        } as unknown as NavState;
+        const cue = turnPreview(st, this.settings, profile);
+        if (!cue) break;
+        this.play(cue, t);
+        t += cue.interval;
+        // Walk on by the distance that interval covers (the build-up speeds up naturally).
+        closeness += Math.max(0.04, cue.interval * 0.07);
+      }
+      t += 1.2;
+    }
+    this.busyUntil = t;
+    this.nextManeuver = Math.max(this.nextManeuver, t);
   }
 
   /** Orientation check: left, half-left, ahead, half-right, right, behind (with the real cue pitches). */

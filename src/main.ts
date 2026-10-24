@@ -458,10 +458,19 @@ function setSound(on: boolean): void {
   syncAudioBtn();
 }
 startBtn.addEventListener('click', () => setSound(!(audio.running && !audio.muted)));
-$('test-sweep').addEventListener('click', () => {
-  const sweep = () => audio.testSweep();
-  if (!audio.running || audio.muted) void startAudio().then(sweep);
-  else sweep();
+/** Run `fn` with sound on, starting it first if needed. */
+function withSound(fn: () => void): void {
+  if (!audio.running || audio.muted) void startAudio().then(fn);
+  else fn();
+}
+$('test-sweep').addEventListener('click', () => withSound(() => audio.testSweep()));
+$('test-turn').addEventListener('click', () => withSound(() => audio.testTurn()));
+
+const turnSoundSel = $<HTMLSelectElement>('turnsound');
+turnSoundSel.value = audioSettings.turnSound;
+turnSoundSel.addEventListener('change', () => {
+  audioSettings.turnSound = turnSoundSel.value as AudioSettings['turnSound'];
+  save();
 });
 syncAudioBtn();
 

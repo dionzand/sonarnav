@@ -218,6 +218,48 @@ export function rattle(ctx: AudioContext, dest: AudioNode, t: number, spec: Ratt
   }
 }
 
+export interface PurrSpec {
+  freq: number;
+  /** Glide to this pitch over the purr (up = right, down = left). */
+  freq2?: number;
+  gain: number;
+  duration: number;
+  /** Flutter rate (Hz): ~20–30 sounds like a soft rolled "rrr". */
+  flutter?: number;
+}
+
+/**
+ * A soft, gentle "prrr": a warm low tone whose loudness flutters ~25×/s (like a purr or
+ * a rolled r), heavily low-passed, with a smooth swell in and out. No click, no ring.
+ */
+export function purr(ctx: AudioContext, dest: AudioNode, t: number, spec: PurrSpec): void {
+  const d = spec.duration;
+  const end = t + d;
+  const osc = new OscillatorNode(ctx, { type: 'triangle', frequency: spec.freq });
+  if (spec.freq2 && spec.freq2 !== spec.freq) {
+    osc.frequency.setValueAtTime(spec.freq, t);
+    osc.frequency.exponentialRampToValueAtTime(spec.freq2, end);
+  }
+  // Flutter: gain = 0.55 + 0.45·sin(2π·f·t), i.e. a deep but smooth amplitude wobble.
+  const am = new GainNode(ctx, { gain: 0.55 });
+  const lfo = new OscillatorNode(ctx, { type: 'sine', frequency: spec.flutter ?? 25 });
+  const depth = new GainNode(ctx, { gain: 0.45 });
+  lfo.connect(depth).connect(am.gain);
+  // Soft: only the warm lower harmonics get through.
+  const lp = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: Math.min(1400, spec.freq * 3.5), Q: 0.4 });
+  const env = new GainNode(ctx, { gain: 0 });
+  const attack = Math.min(0.06, d * 0.3);
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(spec.gain, t + attack);
+  env.gain.setTargetAtTime(0, Math.max(t + attack, end - d * 0.35), d * 0.15);
+  osc.connect(am).connect(lp).connect(env).connect(dest);
+  const stopAt = end + d * 0.6;
+  osc.start(t);
+  lfo.start(t);
+  osc.stop(stopAt);
+  lfo.stop(stopAt);
+}
+
 /** A synthetic room: stereo noise with an exponential tail, for a soft ambient wash. */
 export function reverbImpulse(ctx: AudioContext, seconds: number): AudioBuffer {
   const len = Math.ceil(ctx.sampleRate * seconds);
