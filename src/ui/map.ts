@@ -23,6 +23,14 @@ const empty = (): GeoJSON.FeatureCollection => ({ type: 'FeatureCollection', fea
 export interface MapHandlers {
   onClick(p: LngLat, e: { ctrl: boolean; shift: boolean }): void;
   onRightClick(p: LngLat): void;
+  /** The camera mode changed (e.g. you dragged the map, so following stopped). */
+  onCameraChange(mode: CameraMode): void;
+}
+
+export interface MapAction {
+  label: string;
+  primary?: boolean;
+  run(): void;
 }
 
 export class MapView {
@@ -30,9 +38,29 @@ export class MapView {
   private walker: Marker;
   private walkerEl: HTMLElement;
   private ready: Promise<void>;
-  camera: CameraMode = 'heading';
+  private _camera: CameraMode = 'heading';
+  /** The follow mode to return to with "recenter". */
+  followMode: Exclude<CameraMode, 'free'> = 'heading';
+  /** Pointers currently on the map: while any are down, following pauses so gestures aren't cut off. */
+  private pointers = new Set<number>();
+  private popup: maplibregl.Popup | null = null;
 
-  constructor(container: HTMLElement, center: LngLat, handlers: MapHandlers) {
+  get camera(): CameraMode {
+    return this._camera;
+  }
+
+  set camera(mode: CameraMode) {
+    if (mode === this._camera) return;
+    this._camera = mode;
+    if (mode !== 'free') this.followMode = mode;
+    this.handlers.onCameraChange(mode);
+  }
+
+  constructor(
+    container: HTMLElement,
+    center: LngLat,
+    private handlers: MapHandlers,
+  ) {
     this.map = new maplibregl.Map({
       container,
       style: STYLE,
@@ -59,8 +87,20 @@ export class MapView {
       e.preventDefault();
       handlers.onRightClick([e.lngLat.lng, e.lngLat.lat]);
     });
-    // Dragging the map hands the camera to you.
-    this.map.on('dragstart', () => (this.camera = 'free'));
+    // Following calls jumpTo every frame, which would cancel any gesture in progress.
+    // So: pause following while a finger/mouse is down, and once you actually pan,
+    // zoom or rotate, hand the camera to you (a "Follow me" button brings it back).
+    const canvas = this.map.getCanvasContainer();
+    canvas.addEventListener('pointerdown', (e) => this.pointers.add(e.pointerId));
+    for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) {
+      canvas.addEventListener(type, (e) => this.pointers.delete(e.pointerId));
+    }
+    canvas.addEventListener('wheel', () => (this.camera = 'free'), { passive: true });
+    for (const type of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart'] as const) {
+      this.map.on(type, (e: { originalEvent?: Event }) => {
+        if (e.originalEvent) this.camera = 'free';
+      });
+    }
 
     this.ready = new Promise((resolve) => {
       this.map.on('load', () => {
@@ -168,8 +208,37 @@ export class MapView {
   updateWalker(position: LngLat, heading: number): void {
     this.walker.setLngLat(position);
     this.walker.setRotation(heading);
-    if (this.camera === 'heading') this.map.jumpTo({ center: position, bearing: heading });
-    else if (this.camera === 'north') this.map.jumpTo({ center: position, bearing: 0 });
+    if (this.pointers.size > 0) return;
+    if (this._camera === 'heading') this.map.jumpTo({ center: position, bearing: heading });
+    else if (this._camera === 'north') this.map.jumpTo({ center: position, bearing: 0 });
+  }
+
+  /** A small popup at `p` offering explicit choices (instead of acting on a bare tap). */
+  showChoice(p: LngLat, title: string, actions: MapAction[]): void {
+    this.popup?.remove();
+    const el = document.createElement('div');
+    el.className = 'choice';
+    const h = document.createElement('p');
+    h.textContent = title;
+    el.appendChild(h);
+    for (const a of actions) {
+      const b = document.createElement('button');
+      b.textContent = a.label;
+      if (a.primary) b.className = 'primary';
+      b.addEventListener('click', () => {
+        this.popup?.remove();
+        a.run();
+      });
+      el.appendChild(b);
+    }
+    this.popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true, maxWidth: '240px', focusAfterOpen: true })
+      .setLngLat(p)
+      .setDOMContent(el)
+      .addTo(this.map);
+  }
+
+  closeChoice(): void {
+    this.popup?.remove();
   }
 
   updateNav(state: NavState | null): void {

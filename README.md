@@ -45,12 +45,19 @@ The app is deployed to **https://dionzand.github.io/sonarnav/** on every push to
 4. Search a destination in **To** (or tap the map), then start walking or cycling.
 
 **Heading from** (shown in live mode):
-- **Auto**: uses the compass when you're slow or standing, and the GPS direction of travel above ~7 km/h.
-- **Compass**: for a phone held in your hand or mounted on the handlebar.
-- **GPS direction**: for a phone in your pocket. It needs movement, so it's unreliable when you're standing still.
+- **Direction of travel** (default): your real walking or cycling direction from GPS, for a phone in your pocket. It needs a few metres of movement. When you stop, it keeps the last known direction.
+- **Compass**: the way the top of the phone points. Only for a phone held in your hand or mounted on the handlebar.
+- **Auto**: compass when you're standing, GPS direction from walking speed upward.
+
+**Map:**
+- Drag, pinch or rotate the map freely. Tap **Follow me** to snap back to your position.
+- Tapping the map opens a small menu (**Navigate here**). Nothing happens without confirming.
+- **Hide settings** shrinks the panel to a slim bar.
+
+**Pocket mode** blacks out the screen and ignores touches, so the phone can stay in your pocket with the page still running. Hold the screen for 2 s to exit.
 
 **Known limits of the web version**
-- The screen has to stay on: iOS suspends web pages, and with them the audio, when the screen locks. The app asks iOS to keep the screen awake while live mode is on. Navigating with the phone locked in a pocket needs a native app.
+- **Don't lock the phone.** iOS pauses web pages when the screen locks, which stops GPS and sound. Use pocket mode instead. Navigating with a locked phone needs a native app, which is the planned next step.
 - Sound plays even with the silent switch on (Safari 16.4+).
 - GPS in cities is typically ±5–15 m. The HUD shows the current accuracy.
 

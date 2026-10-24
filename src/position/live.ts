@@ -9,8 +9,8 @@ import { PositionFix, PositionSource } from './provider';
  */
 export type HeadingSource = 'auto' | 'compass' | 'course';
 
-/** Above this speed (m/s, ≈ 7 km/h) GPS course is more reliable than a wobbly compass. */
-const COURSE_MIN_SPEED = 2;
+/** Auto mode: above this speed (m/s, ≈ 3.6 km/h, i.e. walking) use GPS course instead of the compass. */
+const COURSE_MIN_SPEED = 1;
 
 interface OrientationEventIOS extends DeviceOrientationEvent {
   webkitCompassHeading?: number;
@@ -18,7 +18,7 @@ interface OrientationEventIOS extends DeviceOrientationEvent {
 
 /** Real GPS + compass via the browser. Requires HTTPS (or localhost). */
 export class LiveGps implements PositionSource {
-  headingSource: HeadingSource = 'auto';
+  headingSource: HeadingSource = 'course';
   running = false;
   accuracy: number | null = null;
   compass: number | null = null;
@@ -101,11 +101,16 @@ export class LiveGps implements PositionSource {
     this.accuracy = c.accuracy;
     this.lastFixTime = pos.timestamp;
     this.speed = c.speed !== null && c.speed >= 0 ? c.speed : this.speed;
-    if (c.heading !== null && !Number.isNaN(c.heading) && this.speed > 0.5) {
-      this.course = c.heading;
+    let course: number | null = null;
+    if (c.heading !== null && !Number.isNaN(c.heading) && c.heading >= 0 && this.speed > 0.5) {
+      course = c.heading;
     } else if (this.prevForCourse && distance(this.prevForCourse, p) > Math.max(6, c.accuracy * 0.5)) {
       // No course from the device: derive it from movement.
-      this.course = bearing(this.prevForCourse, p);
+      course = bearing(this.prevForCourse, p);
+    }
+    // Light smoothing against walking sway; when standing still the last course is kept.
+    if (course !== null) {
+      this.course = this.course === null ? course : normalize360(this.course + 0.6 * angleDiff(this.course, course));
     }
     if (!this.prevForCourse || distance(this.prevForCourse, p) > 6) this.prevForCourse = p;
   }

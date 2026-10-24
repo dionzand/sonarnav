@@ -12,7 +12,7 @@ import { NoisyGps } from './position/gpsNoise';
 import { fetchStreets } from './position/streets';
 import { HeadingSource, LiveGps } from './position/live';
 import { PositionFix } from './position/provider';
-import { MapView, CameraMode } from './ui/map';
+import { MapView, CameraMode, MapAction } from './ui/map';
 import { renderHud, cardinal, fmtDist } from './ui/hud';
 import { announce, setSpeech } from './ui/a11y';
 import { attachSearch } from './ui/search';
@@ -27,6 +27,7 @@ interface Saved {
   profile?: Profile;
   position?: LngLat;
   speech?: boolean;
+  headingSource?: HeadingSource;
 }
 function load(): Saved {
   try {
@@ -37,7 +38,7 @@ function load(): Saved {
 }
 function save(): void {
   try {
-    const s: Saved = { audio: audioSettings, nav: navSettings, scheme: audio.scheme.id, profile: sim.profile, position: sim.position, speech: speechBox.checked };
+    const s: Saved = { audio: audioSettings, nav: navSettings, scheme: audio.scheme.id, profile: sim.profile, position: sim.position, speech: speechBox.checked, headingSource: live.headingSource };
     localStorage.setItem(STORE_KEY, JSON.stringify(s));
   } catch {
     /* private mode etc. */
@@ -86,10 +87,36 @@ const map = new MapView($('map'), sim.position, {
     if (mods.ctrl && !liveMode) {
       sim.face(p);
       announce(`Facing ${Math.round(sim.heading)} degrees`);
-    } else {
-      setDestination(p, 'map point');
-      void planRoute();
+      return;
     }
+    // A tap only offers choices; nothing changes until you pick one.
+    const actions: MapAction[] = [
+      {
+        label: 'Navigate here',
+        primary: true,
+        run: () => {
+          setDestination(p, 'map point');
+          void planRoute();
+        },
+      },
+    ];
+    if (!liveMode) {
+      actions.push({
+        label: 'Move me here',
+        run: () => {
+          sim.teleport(p);
+          fromPos = null;
+          $<HTMLInputElement>('from').value = '';
+          announce('Moved');
+          if (destination) void planRoute();
+        },
+      });
+    }
+    map.showChoice(p, `${p[1].toFixed(5)}, ${p[0].toFixed(5)}`, actions);
+  },
+  onCameraChange(mode) {
+    $<HTMLSelectElement>('camera').value = mode;
+    $('recenter').hidden = mode !== 'free';
   },
   onRightClick(p) {
     if (liveMode) return;
@@ -222,6 +249,21 @@ snapSel.addEventListener('change', () => setSnap(snapSel.value as SnapMode));
 
 const camSel = $<HTMLSelectElement>('camera');
 camSel.addEventListener('change', () => (map.camera = camSel.value as CameraMode));
+$('recenter').addEventListener('click', () => {
+  map.camera = map.followMode;
+  announce('Following your position');
+});
+
+// Collapse the settings panel to a slim bar (mostly for phones, where it covers the map).
+const panelToggle = $<HTMLButtonElement>('panel-toggle');
+function setCollapsed(collapsed: boolean): void {
+  document.body.classList.toggle('collapsed', collapsed);
+  panelToggle.setAttribute('aria-expanded', String(!collapsed));
+  panelToggle.textContent = collapsed ? 'Show settings' : 'Hide settings';
+  // The map's container changed size.
+  requestAnimationFrame(() => map.map.resize());
+}
+panelToggle.addEventListener('click', () => setCollapsed(!document.body.classList.contains('collapsed')));
 
 const noiseBox = $<HTMLInputElement>('noise');
 noiseBox.addEventListener('change', () => (gps.enabled = noiseBox.checked));
@@ -311,20 +353,66 @@ speechBox.addEventListener('change', () => {
   save();
 });
 
+// One button: sound on / off. "Off" mutes; the engine keeps running so it's instant to resume.
 const startBtn = $<HTMLButtonElement>('audio-start');
-async function startAudio(): Promise<void> {
-  await audio.start();
-  startBtn.textContent = 'Audio on';
-  startBtn.setAttribute('aria-pressed', 'true');
-  announce(liveMode ? 'Audio on.' : 'Audio on. Press T for a direction test.');
+function syncAudioBtn(): void {
+  const on = audio.running && !audio.muted;
+  startBtn.textContent = on ? 'Sound on' : 'Sound off';
+  startBtn.setAttribute('aria-pressed', String(on));
+  startBtn.classList.toggle('primary', !on);
 }
-startBtn.addEventListener('click', () => void startAudio());
+async function startAudio(): Promise<void> {
+  try {
+    await audio.start();
+    audio.setMuted(false);
+    announce(liveMode ? 'Sound on.' : 'Sound on. Press T for a direction test.');
+  } catch (e) {
+    announce(`Could not start sound: ${(e as Error).message}`);
+  }
+  syncAudioBtn();
+}
+function setSound(on: boolean): void {
+  if (on) {
+    void startAudio();
+    return;
+  }
+  audio.setMuted(true);
+  announce('Sound off');
+  syncAudioBtn();
+}
+startBtn.addEventListener('click', () => setSound(!(audio.running && !audio.muted)));
+syncAudioBtn();
 
 // ---------- live GPS (phone) ----------
 const liveBtn = $<HTMLButtonElement>('live-toggle');
 const liveStatus = $('live-status');
 const headingSrcSel = $<HTMLSelectElement>('heading-source');
-headingSrcSel.addEventListener('change', () => (live.headingSource = headingSrcSel.value as HeadingSource));
+live.headingSource = saved.headingSource ?? 'course';
+headingSrcSel.value = live.headingSource;
+headingSrcSel.addEventListener('change', () => {
+  live.headingSource = headingSrcSel.value as HeadingSource;
+  save();
+});
+
+// Pocket mode: a black screen that ignores touches (the page must stay awake on iOS),
+// so the phone can ride in a pocket without accidental taps. Hold 2 s to leave.
+const pocket = $('pocket');
+let pocketHold: number | undefined;
+function setPocket(on: boolean): void {
+  pocket.hidden = !on;
+  if (on) {
+    void keepAwake();
+    announce('Pocket mode. Hold the screen for 2 seconds to exit.');
+  }
+}
+$('pocket-on').addEventListener('click', () => setPocket(true));
+pocket.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  pocketHold = window.setTimeout(() => setPocket(false), 2000);
+});
+for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) {
+  pocket.addEventListener(type, () => clearTimeout(pocketHold));
+}
 
 // Keep the screen on while navigating live; iOS releases the lock whenever the page is hidden.
 let wakeLock: WakeLockSentinel | null = null;
@@ -338,7 +426,7 @@ async function keepAwake(): Promise<void> {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   // iOS suspends audio in the background; pick up where we left off.
-  if (startBtn.getAttribute('aria-pressed') === 'true') void audio.start();
+  if (startBtn.getAttribute('aria-pressed') === 'true') void audio.start().then(syncAudioBtn);
   if (liveMode) void keepAwake();
 });
 
@@ -494,8 +582,7 @@ window.addEventListener('keydown', (e) => {
       void startAudio();
       break;
     case 'm':
-      audio.setMuted(!audio.muted);
-      announce(audio.muted ? 'Muted' : 'Unmuted');
+      setSound(!(audio.running && !audio.muted));
       break;
     case 't':
       if (!audio.running) void startAudio().then(() => audio.testSweep());

@@ -19,9 +19,13 @@
     <div id="app">
       <aside id="panel" aria-label="Route planning and settings">
         <header>
-          <h1>SonarNav <span class="tag">playground</span></h1>
-          <button id="audio-start" class="primary">Start audio</button>
+          <h1>SonarNav</h1>
+          <div class="header-buttons">
+            <button id="audio-start" class="primary" aria-pressed="false">Sound off</button>
+            <button id="panel-toggle" aria-expanded="true" aria-controls="panel-body">Hide settings</button>
+          </div>
         </header>
+        <div id="panel-body">
 
         <section aria-labelledby="h-live">
           <h2 id="h-live">Position</h2>
@@ -32,10 +36,13 @@
           <div class="row live-only">
             <label for="heading-source">Heading from</label>
             <select id="heading-source">
-              <option value="auto">Auto (compass slow, GPS when moving)</option>
+              <option value="course">Direction of travel (GPS; phone in pocket)</option>
               <option value="compass">Compass (phone held / mounted)</option>
-              <option value="course">GPS direction (phone in pocket)</option>
+              <option value="auto">Auto (compass when standing, GPS when moving)</option>
             </select>
+          </div>
+          <div class="row live-only">
+            <button id="pocket-on" class="wide">Pocket mode (black screen, taps ignored)</button>
           </div>
         </section>
 
@@ -126,13 +133,18 @@
           <h2 id="h-keys">Keys <span class="muted small">(press ? any time)</span></h2>
           <dl id="keys" class="keys"></dl>
         </section>
+        </div>
       </aside>
 
       <main id="map-wrap" aria-label="Map">
         <div id="map"></div>
         <div id="hud" aria-hidden="true"></div>
+        <button id="recenter" class="primary" hidden>Follow me</button>
         <div id="toast" aria-hidden="true"></div>
       </main>
+    </div>
+    <div id="pocket" hidden role="dialog" aria-label="Pocket mode">
+      <p>Pocket mode. Navigation and sound keep running.<br />Hold anywhere for 2 seconds to exit.</p>
     </div>
     <div id="live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     <dialog id="help" aria-labelledby="help-title">

@@ -72,9 +72,9 @@ export function renderHud(el: HTMLElement, h: HudInfo): void {
   const g = h.guidance;
   const m = h.maneuver;
   const audio = !h.audioOn
-    ? '<span class="warn">audio off: press Start audio or Enter</span>'
+    ? '<span class="warn">sound off (button top left, or Enter)</span>'
     : h.muted
-      ? '<span class="warn">muted</span>'
+      ? '<span class="warn">sound off</span>'
       : g
         ? 'kind' in g
           ? `${g.kind} ${Math.round(g.freq)} Hz · ${g.timbre} · every ${g.interval.toFixed(2)} s`
