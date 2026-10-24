@@ -207,6 +207,9 @@ body.collapsed .header-buttons { flex-direction: column; }
   -webkit-touch-callout: none;
 }
 #pocket[hidden] { display: none; }
+#pocket p { white-space: pre-line; transition: color 0.2s; }
+/* Visible feedback while holding: the text brightens. */
+#pocket.holding p { color: #9aa3af; }
 
 /* Live mode hides simulator-only controls; simulator mode hides live-only ones. */
 .live-only { display: none; }

@@ -395,24 +395,56 @@ headingSrcSel.addEventListener('change', () => {
 });
 
 // Pocket mode: a black screen that ignores touches (the page must stay awake on iOS),
-// so the phone can ride in a pocket without accidental taps. Hold 2 s to leave.
+// so the phone can ride in a pocket without accidental taps.
+// Exit: hold 1.5 s, or tap 4 times quickly, or press Escape.
 const pocket = $('pocket');
+const pocketMsg = $('pocket-msg');
+const POCKET_HINT = 'Pocket mode. Navigation and sound keep running.\nHold for 1.5 seconds, or tap 4 times quickly, to exit.';
 let pocketHold: number | undefined;
+let pocketTaps: number[] = [];
 function setPocket(on: boolean): void {
   pocket.hidden = !on;
+  clearTimeout(pocketHold);
+  pocketHold = undefined;
+  pocketTaps = [];
+  pocket.classList.remove('holding');
+  pocketMsg.textContent = POCKET_HINT;
   if (on) {
     void keepAwake();
-    announce('Pocket mode. Hold the screen for 2 seconds to exit.');
+    announce('Pocket mode. Hold the screen, or tap 4 times quickly, to exit.');
+  } else {
+    announce('Pocket mode off');
   }
 }
 $('pocket-on').addEventListener('click', () => setPocket(true));
-pocket.addEventListener('pointerdown', (e) => {
+function pocketDown(e: Event): void {
+  // Blocks iOS's own long-press handling (text selection, callout), which would
+  // otherwise cancel the touch after a moment and reset the hold.
   e.preventDefault();
-  pocketHold = window.setTimeout(() => setPocket(false), 2000);
-});
-for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) {
-  pocket.addEventListener(type, () => clearTimeout(pocketHold));
+  if (pocketHold !== undefined) return;
+  pocket.classList.add('holding');
+  pocketMsg.textContent = 'Keep holding…';
+  pocketHold = window.setTimeout(() => setPocket(false), 1500);
 }
+function pocketUp(e: Event): void {
+  e.preventDefault();
+  if (pocketHold === undefined) return;
+  clearTimeout(pocketHold);
+  pocketHold = undefined;
+  pocket.classList.remove('holding');
+  pocketMsg.textContent = POCKET_HINT;
+  const now = performance.now();
+  pocketTaps = [...pocketTaps.filter((t) => now - t < 1500), now];
+  if (pocketTaps.length >= 4) setPocket(false);
+}
+// Touch events (not pointer events): iOS cancels pointers during long presses.
+pocket.addEventListener('touchstart', pocketDown, { passive: false });
+pocket.addEventListener('touchend', pocketUp, { passive: false });
+pocket.addEventListener('mousedown', pocketDown);
+pocket.addEventListener('mouseup', pocketUp);
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !pocket.hidden) setPocket(false);
+});
 
 // Keep the screen on while navigating live; iOS releases the lock whenever the page is hidden.
 let wakeLock: WakeLockSentinel | null = null;

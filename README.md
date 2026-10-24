@@ -54,7 +54,7 @@ The app is deployed to **https://dionzand.github.io/sonarnav/** on every push to
 - Tapping the map opens a small menu (**Navigate here**). Nothing happens without confirming.
 - **Hide settings** shrinks the panel to a slim bar.
 
-**Pocket mode** blacks out the screen and ignores touches, so the phone can stay in your pocket with the page still running. Hold the screen for 2 s to exit.
+**Pocket mode** blacks out the screen and ignores touches, so the phone can stay in your pocket with the page still running. Hold the screen for 1.5 s, or tap it 4 times quickly, to exit.
 
 **Known limits of the web version**
 - **Don't lock the phone.** iOS pauses web pages when the screen locks, which stops GPS and sound. Use pocket mode instead. Navigating with a locked phone needs a native app, which is the planned next step.
