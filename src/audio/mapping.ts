@@ -29,6 +29,8 @@ export interface AudioSettings {
   soundscape: number;
   /** A soft airy layer that always comes from the direction to go. */
   breeze: boolean;
+  /** "Keep straight" cues at junctions without a turn: never, only at easy-to-miss forks, or always. */
+  junctions: 'off' | 'forks' | 'all';
 }
 
 export const DEFAULT_AUDIO: AudioSettings = {
@@ -43,6 +45,7 @@ export const DEFAULT_AUDIO: AudioSettings = {
   turnWarn: { foot: 30, bike: 60 },
   soundscape: 0.5,
   breeze: true,
+  junctions: 'forks',
 };
 
 /** Target state of the continuous background soundscape. */
@@ -90,7 +93,9 @@ export function soundscapeFor(state: NavState | null, s: AudioSettings): Soundsc
 
 /** One sound event produced by a scheme. */
 export interface Cue {
-  kind: 'beep' | 'tick' | 'behind' | 'chirp';
+  kind: 'beep' | 'tick' | 'behind' | 'chirp' | 'straight';
+  /** 'straight': how many equal notes (3 at a fork). */
+  repeats?: number;
   /** Direction, degrees: 0 ahead, +90 right, -90 left, ±180 behind. Used by HRTF. */
   azimuth: number;
   /** Stereo pan -1..1, used in stereo mode. */
@@ -193,6 +198,36 @@ export function turnPreview(state: NavState, s: AudioSettings, profile: Profile)
     // Loudness grows with closeness (slightly curved so the last metres stand out).
     gain: 0.18 + 0.45 * Math.pow(closeness, 1.3),
     interval: turnInterval(closeness, s.style, s.rate),
+  };
+}
+
+/** Start the "keep straight" cue this far before a junction (m). */
+export const JUNCTION_WARN: Record<Profile, number> = { foot: 15, bike: 30 };
+
+/**
+ * "Keep straight" at a junction the route passes through: equal notes from straight ahead
+ * (on the piano metaphor: up = right, down = left, level = straight on). Three notes and a
+ * little louder at a fork, where a neighbouring branch is easy to take by mistake.
+ */
+export function junctionCue(state: NavState, s: AudioSettings, profile: Profile): Cue | null {
+  const j = state.junction;
+  if (s.junctions === 'off' || !j || state.offRoute || state.arrived || isBehind(state.relBearing)) return null;
+  if (s.junctions === 'forks' && !j.fork) return null;
+  if (state.distanceToJunction > JUNCTION_WARN[profile] || state.distanceToJunction < 0) return null;
+  // A turn coming up right after this junction already has the floor.
+  if (state.next && state.distanceToNext <= s.turnWarn[profile] && state.distanceToNext < state.distanceToJunction + 20) return null;
+  const f = s.basePitch * (s.style === 'ambient' ? 0.75 : 1.5);
+  return {
+    kind: 'straight',
+    repeats: j.fork ? 3 : 2,
+    azimuth: 0,
+    pan: 0,
+    freq: f,
+    freq2: f,
+    timbre: 'triangle',
+    duration: 0.14,
+    gain: j.fork ? 0.45 : 0.3,
+    interval: (s.style === 'ambient' ? 2.2 : 1.2) / s.rate,
   };
 }
 

@@ -1,5 +1,5 @@
 import { LngLat, angleDiff, bearing, distance, pointAlong, projectOnLine } from './geo';
-import { Maneuver, Route } from './route';
+import { Junction, Maneuver, Route } from './route';
 
 export interface NavSettings {
   /** Minimum look-ahead distance (m). */
@@ -52,6 +52,9 @@ export interface NavState {
   routeBearing: number;
   next: Maneuver | null;
   distanceToNext: number;
+  /** Next junction to pass straight through (see Route.junctions). */
+  junction: Junction | null;
+  distanceToJunction: number;
   offRoute: boolean;
   arrived: boolean;
   /** Events raised by this update. */
@@ -64,6 +67,7 @@ export class Navigator {
   private offRouteSince: number | null = null;
   private arrived = false;
   private nextIndex = 0;
+  private junctionIndex = 0;
 
   constructor(
     public route: Route,
@@ -77,6 +81,7 @@ export class Navigator {
     this.offRouteSince = null;
     this.arrived = false;
     this.nextIndex = 0;
+    this.junctionIndex = 0;
   }
 
   /**
@@ -124,6 +129,10 @@ export class Navigator {
     }
     const next = ms[this.nextIndex] ?? null;
     const distanceToNext = next ? next.along - this.along : route.length - this.along;
+    const js = route.junctions;
+    while (this.junctionIndex < js.length && js[this.junctionIndex].along < this.along + 1) this.junctionIndex++;
+    const junction = js[this.junctionIndex] ?? null;
+    const distanceToJunction = junction ? junction.along - this.along : Infinity;
 
     // Beacon: a point ahead along the route. It waits on the next corner until you are
     // within cornerCommit of it, then jumps around the corner — that jump is the turn cue.
@@ -168,6 +177,8 @@ export class Navigator {
       routeBearing,
       next,
       distanceToNext,
+      junction,
+      distanceToJunction,
       offRoute: this.offRoute,
       arrived: this.arrived,
       events,

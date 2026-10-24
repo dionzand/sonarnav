@@ -112,7 +112,7 @@ export class MapView {
 
   private addLayers(): void {
     const m = this.map;
-    for (const id of ['route', 'beacon', 'maneuvers', 'snapped', 'destination']) {
+    for (const id of ['route', 'beacon', 'maneuvers', 'snapped', 'destination', 'junctions', 'gps']) {
       m.addSource(id, { type: 'geojson', data: empty() });
     }
     m.addLayer({
@@ -128,6 +128,30 @@ export class MapView {
       source: 'route',
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': '#0b6bcb', 'line-width': 5 },
+    });
+    // "Keep straight" junctions: small squares-ish dots, violet at forks.
+    m.addLayer({
+      id: 'junctions',
+      type: 'circle',
+      source: 'junctions',
+      paint: {
+        'circle-radius': ['case', ['get', 'fork'], 5, 3.5],
+        'circle-color': ['case', ['get', 'fork'], '#9b5de5', '#8892a0'],
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 1.5,
+      },
+    });
+    // Map-matching: raw GPS (grey) and where it was snapped to (hollow blue ring).
+    m.addLayer({
+      id: 'gps',
+      type: 'circle',
+      source: 'gps',
+      paint: {
+        'circle-radius': ['case', ['==', ['get', 'kind'], 'raw'], 4, 6],
+        'circle-color': ['case', ['==', ['get', 'kind'], 'raw'], '#8892a0', 'rgba(0,0,0,0)'],
+        'circle-stroke-color': ['case', ['==', ['get', 'kind'], 'raw'], '#ffffff', '#0b6bcb'],
+        'circle-stroke-width': 2,
+      },
     });
     m.addLayer({
       id: 'maneuvers',
@@ -180,7 +204,7 @@ export class MapView {
 
   showRoute(route: Route | null): void {
     if (!route) {
-      for (const id of ['route', 'maneuvers', 'beacon', 'snapped']) void this.setData(id, empty());
+      for (const id of ['route', 'maneuvers', 'beacon', 'snapped', 'junctions']) void this.setData(id, empty());
       return;
     }
     void this.setData('route', { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: route.geometry } });
@@ -199,6 +223,23 @@ export class MapView {
         geometry: { type: 'Point', coordinates: m.location },
       })),
     });
+  }
+
+  /** Junctions that will get a "keep straight" cue under the current setting. */
+  showJunctions(route: Route | null, mode: 'off' | 'forks' | 'all'): void {
+    const js = !route || mode === 'off' ? [] : route.junctions.filter((j) => mode === 'all' || j.fork);
+    void this.setData('junctions', {
+      type: 'FeatureCollection',
+      features: js.map((j) => ({ type: 'Feature', properties: { fork: j.fork }, geometry: { type: 'Point', coordinates: j.location } })),
+    });
+  }
+
+  /** Raw GPS position and its map-matched counterpart (null hides). */
+  showGps(raw: LngLat | null, matched: LngLat | null): void {
+    const features: GeoJSON.Feature[] = [];
+    if (raw) features.push({ type: 'Feature', properties: { kind: 'raw' }, geometry: { type: 'Point', coordinates: raw } });
+    if (matched) features.push({ type: 'Feature', properties: { kind: 'matched' }, geometry: { type: 'Point', coordinates: matched } });
+    void this.setData('gps', { type: 'FeatureCollection', features });
   }
 
   showDestination(p: LngLat | null): void {

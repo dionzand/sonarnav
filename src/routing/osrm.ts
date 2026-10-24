@@ -1,5 +1,5 @@
 import { LngLat } from '../core/geo';
-import { RawStep, buildRoute } from '../core/route';
+import { RawIntersection, RawStep, buildRoute } from '../core/route';
 import { RouteRequest, Router } from './router';
 
 // FOSSGIS-hosted OSRM with real bike/foot profiles (the project-osrm.org demo is car-only).
@@ -12,7 +12,13 @@ interface OsrmResponse {
   routes: {
     duration: number;
     geometry: { coordinates: LngLat[] };
-    legs: { steps: { name: string; maneuver: { type: string; location: LngLat } }[] }[];
+    legs: {
+      steps: {
+        name: string;
+        maneuver: { type: string; location: LngLat };
+        intersections?: RawIntersection[];
+      }[];
+    }[];
   }[];
 }
 
@@ -29,7 +35,7 @@ export class OsrmRouter implements Router {
     }
     const r = data.routes[0];
     const steps: RawStep[] = r.legs.flatMap((leg) =>
-      leg.steps.map((s) => ({ location: s.maneuver.location, type: s.maneuver.type, name: s.name })),
+      leg.steps.map((s) => ({ location: s.maneuver.location, type: s.maneuver.type, name: s.name, intersections: s.intersections })),
     );
     return buildRoute(req.profile, r.geometry.coordinates, steps, r.duration);
   }

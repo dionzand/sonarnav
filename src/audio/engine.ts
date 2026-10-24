@@ -213,11 +213,19 @@ export class AudioEngine {
           chime(ctx, dest, t, { freq: cue.freq, gain: g * 0.6, decay: cue.duration * 5.5, bright: 0.5 });
           chime(ctx, dest, t + 0.15, { freq: cue.freq2 ?? cue.freq, gain: g * 0.6, decay: cue.duration * 7, bright: 0.5 });
           break;
+        case 'straight':
+          // Level notes from straight ahead: "keep going".
+          for (let i = 0; i < (cue.repeats ?? 2); i++) {
+            chime(ctx, dest, t + i * 0.16, { freq: cue.freq, gain: g * 0.6, decay: 0.7, bright: 0.3 });
+          }
+          break;
       }
       return;
     }
     const spec = { freq: cue.freq, freq2: cue.freq2, type: cue.timbre, duration: cue.duration, gain: cue.gain };
-    if (cue.kind === 'chirp') chirp(ctx, dest, t, spec);
+    if (cue.kind === 'straight') {
+      for (let i = 0; i < (cue.repeats ?? 2); i++) tone(ctx, dest, t + i * 0.12, { ...spec, freq2: undefined, duration: 0.07 });
+    } else if (cue.kind === 'chirp') chirp(ctx, dest, t, spec);
     else tone(ctx, dest, t, spec);
   }
 

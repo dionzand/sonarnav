@@ -16,6 +16,8 @@ export interface HudInfo {
   noise: boolean;
   paused: boolean;
   live?: { accuracy: number | null; source: 'compass' | 'course' | null; fixAge: number; waiting: boolean };
+  /** Map-matching status, when enabled. */
+  match?: { matched: boolean; shift: number; waiting?: boolean };
   audioOn: boolean;
   muted: boolean;
   state: NavState | null;
@@ -66,8 +68,15 @@ export function renderHud(el: HTMLElement, h: HudInfo): void {
       ['off line', `<span class="${st.offRoute ? 'bad' : st.crossTrack > 8 ? 'warn' : ''}">${fmtDist(st.crossTrack)}${st.offRoute ? ' OFF ROUTE' : ''}</span>`],
       ['next', st.next ? `${signed(st.next.angle)} ${describeAngle(st.next.angle)} in ${fmtDist(st.distanceToNext)}` : `arrive in ${fmtDist(st.distanceToNext)}`],
       ['onto', st.next?.name || '—'],
+      ...(st.junction && st.distanceToJunction < 80
+        ? ([['junction', `straight in ${fmtDist(st.distanceToJunction)}${st.junction.fork ? ' <span class="warn">fork</span>' : ''}`]] as [string, string][])
+        : []),
       ['left', st.arrived ? '<span class="good">arrived</span>' : fmtDist(st.remaining)],
     );
+  }
+  if (h.match) {
+    const mm = h.match;
+    rows.push(['matching', mm.waiting ? '<span class="warn">loading streets…</span>' : mm.matched ? `snapped ${fmtDist(mm.shift)}` : 'no street nearby']);
   }
   const g = h.guidance;
   const m = h.maneuver;
@@ -81,7 +90,8 @@ export function renderHud(el: HTMLElement, h: HudInfo): void {
           : `tone ${Math.round(g.freq)} Hz · ${g.timbre}`
         : 'silent';
   rows.push(['sound', audio]);
-  if (m) rows.push(['turn cue', `${Math.round(m.freq)}→${Math.round(m.freq2 ?? m.freq)} Hz · every ${m.interval.toFixed(1)} s · vol ${Math.round((m.gain / 0.63) * 100)}%`]);
+  if (m?.kind === 'straight') rows.push(['junction cue', `keep straight ×${m.repeats} · every ${m.interval.toFixed(1)} s`]);
+  else if (m) rows.push(['turn cue', `${Math.round(m.freq)}→${Math.round(m.freq2 ?? m.freq)} Hz · every ${m.interval.toFixed(1)} s · vol ${Math.round((m.gain / 0.63) * 100)}%`]);
 
   const pans = [g ? `<i style="left:${((g.pan + 1) / 2) * 100}%"></i>` : '', m ? `<i class="turn" style="left:${((m.pan + 1) / 2) * 100}%"></i>` : ''].join('');
 

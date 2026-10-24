@@ -32,6 +32,18 @@ Use **headphones**. Click **Start audio** (or press Enter), then press **T** for
    - **Breeze**: an airy layer that always comes *from the direction to go*. It's faint when you're on course and grows as you turn away. Turn it off with the "Directional breeze" checkbox.
    - The background dips briefly under each chime, so the chimes sit inside it.
 
+   **Junctions** (Route panel): where the route goes *straight* through a junction that has other ways to go, you hear **"keep straight"**: two level notes from straight ahead (in the piano metaphor, up = right, down = left, level = straight on).
+   - Choose between "at forks" (default: only where another branch is within 50° of your way, so easy to take by mistake; you then hear three notes), "at every junction", or off.
+   - On the map, junctions with a cue are marked with small dots, violet at forks.
+
+   **Map-matching** (Route panel, "Snap GPS to streets"): snaps the GPS position onto the street network from OpenStreetMap. The streets around the route load in about 20 s. Each nearby street is scored on:
+   - distance, compared with the GPS accuracy;
+   - whether it runs in your direction of travel;
+   - continuity: reaching a parallel street over the network would mean a detour via a junction, so it's penalized;
+   - a bonus for the planned route.
+
+   The matched street's direction also steadies your heading. On the map, the grey dot is the raw GPS position and the blue ring is the matched one. In the simulator, test it with **N** (GPS noise).
+
    **Directionality** (Sound panel):
    - **Binaural** panning (default) gives each ear what it would get from a real source: a sub-millisecond delay, plus the far ear quieter and muffled. This lateralizes much more strongly than plain stereo.
    - **Direction emphasis** exaggerates angles (default 1.6×), so a 20° deviation already sounds clearly to one side.

@@ -1,12 +1,26 @@
-import { LngLat, distance } from '../core/geo';
+import { LngLat, bearing, distance } from '../core/geo';
+
+export interface Candidate {
+  /** Segment index. */
+  segment: number;
+  point: LngLat;
+  distance: number;
+  /** Bearing of the segment (a → b); streets are two-way, so also consider +180. */
+  bearing: number;
+}
+
+// Endpoints are compared by rounded coordinates (~1 cm): OSM ways share nodes at junctions.
+const nodeKey = (p: LngLat) => `${p[0].toFixed(7)},${p[1].toFixed(7)}`;
 
 /** Walkable/cyclable street segments with a coarse grid index for fast nearest-segment lookup. */
 export class StreetNetwork {
   private segments: [LngLat, LngLat][] = [];
   private grid = new Map<string, number[]>();
+  /** Segments touching each node, for connectivity. */
+  private byNode = new Map<string, number[]>();
   private static CELL = 0.0005; // ≈ 35–55 m
 
-  constructor(lines: LngLat[][]) {
+  constructor(readonly lines: LngLat[][]) {
     for (const line of lines) {
       for (let i = 0; i < line.length - 1; i++) {
         const idx = this.segments.push([line[i], line[i + 1]]) - 1;
@@ -15,12 +29,90 @@ export class StreetNetwork {
           if (bucket) bucket.push(idx);
           else this.grid.set(key, [idx]);
         }
+        for (const p of [line[i], line[i + 1]]) {
+          const k = nodeKey(p);
+          const list = this.byNode.get(k);
+          if (list) list.push(idx);
+          else this.byNode.set(k, [idx]);
+        }
       }
     }
   }
 
   get size(): number {
     return this.segments.length;
+  }
+
+  /** Every segment within `radius` metres of p (radius up to ~35 m). */
+  candidates(p: LngLat, radius: number): Candidate[] {
+    const C = StreetNetwork.CELL;
+    const cx = Math.floor(p[0] / C);
+    const cy = Math.floor(p[1] / C);
+    const seen = new Set<number>();
+    const out: Candidate[] = [];
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (const idx of this.grid.get(`${cx + dx},${cy + dy}`) ?? []) {
+          if (seen.has(idx)) continue;
+          seen.add(idx);
+          const [a, b] = this.segments[idx];
+          const q = closestOnSegment(p, a, b);
+          const d = distance(p, q);
+          if (d <= radius) out.push({ segment: idx, point: q, distance: d, bearing: bearing(a, b) });
+        }
+      }
+    }
+    return out;
+  }
+
+  segment(i: number): [LngLat, LngLat] {
+    return this.segments[i];
+  }
+
+  /** Segments that start or end at node p. */
+  segmentsAt(p: LngLat): number[] {
+    return this.byNode.get(nodeKey(p)) ?? [];
+  }
+
+  /**
+   * Walking distance over the network from `from` (a point on segment `fromSeg`) to `to`
+   * (a point on segment `toSeg`), or Infinity if it's longer than `limit` metres.
+   */
+  networkDistance(fromSeg: number, from: LngLat, toSeg: number, to: LngLat, limit: number): number {
+    if (fromSeg === toSeg) return distance(from, to);
+    // Dijkstra over nodes, seeded with both ends of the starting segment.
+    const dist = new Map<string, number>();
+    const queue: [number, LngLat][] = [];
+    for (const p of this.segments[fromSeg]) {
+      const d = distance(from, p);
+      dist.set(nodeKey(p), d);
+      queue.push([d, p]);
+    }
+    const [ta, tb] = this.segments[toSeg];
+    const targets = new Map([
+      [nodeKey(ta), distance(ta, to)],
+      [nodeKey(tb), distance(tb, to)],
+    ]);
+    let best = Infinity;
+    while (queue.length) {
+      queue.sort((x, y) => x[0] - y[0]);
+      const [d, p] = queue.shift()!;
+      if (d > limit || d >= best) break;
+      const k = nodeKey(p);
+      if (d > (dist.get(k) ?? Infinity)) continue;
+      const tail = targets.get(k);
+      if (tail !== undefined) best = Math.min(best, d + tail);
+      for (const s of this.byNode.get(k) ?? []) {
+        const [a, b] = this.segments[s];
+        const other = nodeKey(a) === k ? b : a;
+        const nd = d + distance(p, other);
+        if (nd < (dist.get(nodeKey(other)) ?? Infinity)) {
+          dist.set(nodeKey(other), nd);
+          queue.push([nd, other]);
+        }
+      }
+    }
+    return best <= limit ? best : Infinity;
   }
 
   /** Closest point on any street, or null if none in the surrounding cells. */

@@ -1,6 +1,6 @@
 import { NavState } from '../core/navigator';
 import { Profile } from '../core/route';
-import { AudioSettings, Cue, beaconBeep, emphasize, isBehind, panFor, pitchFor, turnPreview } from './mapping';
+import { AudioSettings, Cue, beaconBeep, emphasize, isBehind, junctionCue, panFor, pitchFor, turnPreview } from './mapping';
 
 /** Parameters for a sustained tone (continuous schemes). */
 export interface ToneParams {
@@ -37,7 +37,7 @@ export const SCHEMES: CueScheme[] = [
       'A deep, low note means the route is behind you. Before a turn, a two-note cue moves towards the turn ' +
       '(stepping up for right, down for left) and builds up — faster, higher, louder — until the corner.',
     guidance: (st, s) => beaconBeep(st, s),
-    maneuver: (st, s, p) => turnPreview(st, s, p),
+    maneuver: (st, s, p) => turnPreview(st, s, p) ?? junctionCue(st, s, p),
   },
   {
     id: 'tone',
@@ -59,7 +59,7 @@ export const SCHEMES: CueScheme[] = [
         timbre: behind ? 'sawtooth' : st.offRoute ? 'square' : 'sine',
       };
     },
-    maneuver: (st, s, p) => turnPreview(st, s, p),
+    maneuver: (st, s, p) => turnPreview(st, s, p) ?? junctionCue(st, s, p),
   },
   {
     id: 'events',
@@ -71,6 +71,6 @@ export const SCHEMES: CueScheme[] = [
       if (Math.abs(st.relBearing) <= s.deadZone * 2 && !st.offRoute) return null;
       return beaconBeep(st, s);
     },
-    maneuver: (st, s, p) => turnPreview(st, s, p),
+    maneuver: (st, s, p) => turnPreview(st, s, p) ?? junctionCue(st, s, p),
   },
 ];

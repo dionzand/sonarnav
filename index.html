@@ -68,6 +68,16 @@
             <button id="clear">Clear</button>
           </div>
           <p id="route-summary" class="muted">No route yet.</p>
+          <div class="row">
+            <label for="junctions">Junctions</label>
+            <select id="junctions">
+              <option value="forks">"Keep straight" at forks</option>
+              <option value="all">"Keep straight" at every junction</option>
+              <option value="off">No junction cues</option>
+            </select>
+          </div>
+          <label class="check"><input id="mapmatch" type="checkbox" /> Snap GPS to streets (map-matching)</label>
+          <p id="mapmatch-status" class="muted small" role="status"></p>
         </section>
 
         <section aria-labelledby="h-sim" class="sim-only">

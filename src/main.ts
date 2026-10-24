@@ -1,5 +1,5 @@
 import './styles.css';
-import { LngLat, bearing, normalize360 } from './core/geo';
+import { LngLat, bearing, distance, normalize360 } from './core/geo';
 import { DEFAULT_NAV, NavSettings, NavState, Navigator } from './core/navigator';
 import { Profile, Route, describeAngle } from './core/route';
 import { AudioEngine } from './audio/engine';
@@ -11,6 +11,7 @@ import { Simulator, SNAP_MODES, SnapMode } from './position/simulator';
 import { NoisyGps } from './position/gpsNoise';
 import { fetchStreets } from './position/streets';
 import { HeadingSource, LiveGps } from './position/live';
+import { MapMatcher, MatchResult } from './position/mapMatch';
 import { PositionFix } from './position/provider';
 import { MapView, CameraMode, MapAction } from './ui/map';
 import { renderHud, cardinal, fmtDist } from './ui/hud';
@@ -28,6 +29,7 @@ interface Saved {
   position?: LngLat;
   speech?: boolean;
   headingSource?: HeadingSource;
+  mapMatch?: boolean;
   /** Settings schema; bumped when defaults change in ways old saved values shouldn't override. */
   schema?: number;
 }
@@ -51,7 +53,7 @@ function load(): Saved {
 }
 function save(): void {
   try {
-    const s: Saved = { schema: SCHEMA, audio: audioSettings, nav: navSettings, scheme: audio.scheme.id, profile: sim.profile, position: sim.position, speech: speechBox.checked, headingSource: live.headingSource };
+    const s: Saved = { schema: SCHEMA, audio: audioSettings, nav: navSettings, scheme: audio.scheme.id, profile: sim.profile, position: sim.position, speech: speechBox.checked, headingSource: live.headingSource, mapMatch: mapMatchOn };
     localStorage.setItem(STORE_KEY, JSON.stringify(s));
   } catch {
     /* private mode etc. */
@@ -175,6 +177,7 @@ async function planRoute(opts: { reroute?: boolean } = {}): Promise<void> {
       nav.setRoute(r);
     } else nav = new Navigator(r, navSettings[sim.profile]);
     map.showRoute(r);
+    map.showJunctions(r, audioSettings.junctions);
     if (!opts.reroute && !liveMode && r.geometry.length > 1) sim.setHeading(bearing(r.geometry[0], r.geometry[Math.min(2, r.geometry.length - 1)]));
     const mins = Math.max(1, Math.round(r.duration / 60));
     const text = `${fmtDist(r.length)}, about ${mins} min by ${sim.profile === 'bike' ? 'bike' : 'foot'}, ${r.maneuvers.length} turns.`;
@@ -185,7 +188,8 @@ async function planRoute(opts: { reroute?: boolean } = {}): Promise<void> {
     } else {
       announce(`Route ready. ${text} ${liveMode ? 'Start moving and follow the sound.' : 'Press up arrow to start moving.'}`);
     }
-    if (sim.snapMode === 'streets') void loadStreets();
+    if (sim.snapMode === 'streets' || mapMatchOn) void loadStreets();
+    rebuildMatcher();
   } catch (e) {
     summary.textContent = `Routing failed: ${(e as Error).message}`;
     announce(summary.textContent);
@@ -198,10 +202,15 @@ function clearRoute(): void {
   destination = null;
   map.showRoute(null);
   map.showDestination(null);
+  rebuildMatcher();
   $<HTMLInputElement>('to').value = '';
   $('route-summary').textContent = 'No route yet.';
   announce('Route cleared');
 }
+
+/** Area the loaded streets cover [w, s, e, n]; reroutes inside it don't refetch. */
+let streetsBox: [number, number, number, number] | null = null;
+let streetsLoading = false;
 
 async function loadStreets(): Promise<void> {
   const pts = route?.geometry ?? [here()];
@@ -219,13 +228,42 @@ async function loadStreets(): Promise<void> {
     const [x, y] = here();
     [w, s, e, n] = [x, y, x, y];
   }
+  const b = streetsBox;
+  if (sim.streets && b && w >= b[0] && s >= b[1] && e <= b[2] && n <= b[3]) {
+    rebuildMatcher();
+    return;
+  }
+  if (streetsLoading) return;
+  streetsLoading = true;
+  setMatchStatus('Loading streets from OpenStreetMap (can take ~20 s)…');
   announce('Loading streets…');
   try {
-    sim.streets = await fetchStreets([w - pad, s - pad, e + pad, n + pad]);
-    announce(`Snapping to ${sim.streets.size} street segments`);
+    const box: [number, number, number, number] = [w - pad, s - pad, e + pad, n + pad];
+    sim.streets = await fetchStreets(box);
+    streetsBox = box;
+    announce(`Loaded ${sim.streets.size} street segments`);
+    rebuildMatcher();
   } catch (err) {
     announce(`Could not load streets: ${(err as Error).message}`);
+    setMatchStatus(`Could not load streets: ${(err as Error).message}`);
+  } finally {
+    streetsLoading = false;
   }
+}
+
+// ---------- map-matching ----------
+let mapMatchOn = !!saved.mapMatch;
+let matcher: MapMatcher | null = null;
+function setMatchStatus(text: string): void {
+  $('mapmatch-status').textContent = text;
+}
+/** (Re)create the matcher whenever the streets or the route change. */
+function rebuildMatcher(): void {
+  matcher = mapMatchOn && sim.streets ? new MapMatcher(sim.streets, route?.geometry) : null;
+  if (!mapMatchOn) {
+    setMatchStatus('');
+    map.showGps(null, null);
+  } else if (matcher) setMatchStatus(`On: snapping to ${sim.streets!.size} street segments.`);
 }
 
 // ---------- panel wiring ----------
@@ -347,6 +385,25 @@ panSel.addEventListener('change', () => {
   announce(`Panning: ${panSel.selectedOptions[0].text}. Press T to hear it.`);
   save();
 });
+const junctionSel = $<HTMLSelectElement>('junctions');
+junctionSel.value = audioSettings.junctions;
+junctionSel.addEventListener('change', () => {
+  audioSettings.junctions = junctionSel.value as AudioSettings['junctions'];
+  map.showJunctions(route, audioSettings.junctions);
+  save();
+});
+
+const matchBox = $<HTMLInputElement>('mapmatch');
+matchBox.checked = mapMatchOn;
+matchBox.addEventListener('change', () => {
+  mapMatchOn = matchBox.checked;
+  save();
+  if (mapMatchOn && !sim.streets) void loadStreets();
+  else rebuildMatcher();
+  announce(`Map-matching ${mapMatchOn ? 'on' : 'off'}`);
+});
+if (mapMatchOn) setMatchStatus('On: streets load when you plan a route.');
+
 const breezeBox = $<HTMLInputElement>('breeze');
 breezeBox.checked = audioSettings.breeze;
 breezeBox.addEventListener('change', () => {
@@ -685,6 +742,20 @@ function handleEvents(state: NavState): void {
   }
 }
 
+// The step loop runs at 50 Hz but GPS fixes arrive at ~1 Hz: match each new fix once
+// (and at most 5×/s in the simulator), reusing the result in between.
+let lastMatch: { at: number; raw: LngLat; result: MatchResult } | null = null;
+function matchFix(fix: PositionFix, now: number): PositionFix {
+  const same = lastMatch && lastMatch.raw[0] === fix.position[0] && lastMatch.raw[1] === fix.position[1];
+  if (lastMatch && (same || now - lastMatch.at < 200)) {
+    return { ...lastMatch.result, speed: fix.speed, time: fix.time };
+  }
+  const result = matcher!.match(fix);
+  lastMatch = { at: now, raw: fix.position, result };
+  map.showGps(result.raw, result.matched ? result.position : null);
+  return result;
+}
+
 // Simulation, navigation and audio run on a timer, not on animation frames: browsers
 // throttle rAF to ~1 fps when the window is covered, and you should be able to keep
 // listening with the map hidden behind other windows.
@@ -703,6 +774,8 @@ function step(): void {
     }
     fix = gps.current(now / 1000);
   }
+  if (fix && matcher) fix = matchFix(fix, now);
+  else lastMatch = null;
   lastFix = fix;
   if (nav && route && fix) {
     navState = nav.update(fix.position, normalize360(fix.heading), fix.speed, now / 1000, fix.accuracy ?? 0);
@@ -736,6 +809,11 @@ function frame(now: number): void {
       state: navState,
       guidance: audio.lastGuidance,
       maneuver: audio.lastManeuver,
+      match: mapMatchOn
+        ? lastMatch
+          ? { matched: lastMatch.result.matched, shift: distance(lastMatch.result.raw, lastMatch.result.position) }
+          : { matched: false, shift: 0, waiting: !matcher }
+        : undefined,
     });
   }
   if (now - lastSave > 5000) {
