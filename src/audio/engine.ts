@@ -1,9 +1,9 @@
 import { NavState } from '../core/navigator';
 import { Profile } from '../core/route';
-import { AudioSettings, Cue, panFor, pitchFor, soundscapeFor } from './mapping';
+import { AudioSettings, CourseGate, Cue, panFor, pitchFor, soundscapeFor } from './mapping';
 import { CueScheme, ToneParams } from './schemes';
 import { Soundscape } from './soundscape';
-import { Spatial, chime, chirp, createSpatial, noiseBurst, notes, reverbImpulse, tone } from './synth';
+import { Spatial, chime, chirp, createSpatial, noiseBurst, notes, rattle, reverbImpulse, tone } from './synth';
 
 export type AudioEvent = 'offRoute' | 'backOnRoute' | 'arrived' | 'rerouted' | 'maneuverPassed';
 
@@ -36,6 +36,9 @@ export class AudioEngine {
   private busyUntil = 0; // suppress guidance while an event sound plays
   private lastPlayedKind: Cue['kind'] | null = null;
   private lastPlayedAt = 0;
+  private gate = new CourseGate();
+  /** Cues marked `once` that have already played (e.g. per junction). */
+  private playedOnce = new WeakSet<object>();
   private scape: Soundscape | null = null;
   private scapeKey = '';
   private lastScapeUpdate = 0;
@@ -105,10 +108,12 @@ export class AudioEngine {
 
   private schedule(): void {
     const ctx = this.ctx;
-    const st = this.state;
     if (!ctx || !this.bus) return;
     const now = ctx.currentTime;
     const ahead = 0.05;
+    // Debounced "on course", so a moment of swaying doesn't trigger off-course notes.
+    const raw = this.state;
+    const st = raw && { ...raw, onCourse: this.gate.update(raw.relBearing, this.settings.deadZone, now) };
     this.updateSoundscape(st, now);
     if (!st) {
       this.stopVoice();
@@ -142,10 +147,12 @@ export class AudioEngine {
     }
 
     if (now + ahead >= this.nextManeuver) {
-      const cue = this.scheme.maneuver(st, s, profile);
+      let cue = this.scheme.maneuver(st, s, profile);
+      if (cue?.once && this.playedOnce.has(cue.once)) cue = null;
       this.lastManeuver = cue;
       if (cue) {
         const t = Math.max(now + 0.01, this.nextManeuver);
+        if (cue.once) this.playedOnce.add(cue.once);
         this.play(cue, t);
         // Keep the guidance cue from landing on top of the turn cue.
         this.nextGuidance = Math.max(this.nextGuidance, t + cue.duration + (this.ambient ? 0.3 : 0.08));
@@ -209,9 +216,11 @@ export class AudioEngine {
           chime(ctx, dest, t, { freq: cue.freq, gain: g * 1.4, decay: 1.8, bright: 0.9 });
           break;
         case 'chirp':
-          // Ring time follows the cue length, so the rapid build-up near a turn stays crisp.
-          chime(ctx, dest, t, { freq: cue.freq, gain: g * 0.6, decay: cue.duration * 5.5, bright: 0.5 });
-          chime(ctx, dest, t + 0.15, { freq: cue.freq2 ?? cue.freq, gain: g * 0.6, decay: cue.duration * 7, bright: 0.5 });
+          // Turn: a dry rattle pair ("trrk-trrk"), parking-sensor style. No ringing tail, so
+          // the rapid build-up near the corner stays crisp. The second strike is higher for
+          // a right turn, lower for a left one, and sounds from the turn's direction.
+          rattle(ctx, dest, t, { freq: cue.freq, gain: g * 0.9 });
+          rattle(ctx, dest, t + 0.15, { freq: cue.freq2 ?? cue.freq, gain: g * 0.9 });
           break;
         case 'straight':
           // Level notes from straight ahead: "keep going".

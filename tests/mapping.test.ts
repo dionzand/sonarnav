@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { LngLat, destination } from '../src/core/geo';
 import { DEFAULT_NAV, Navigator } from '../src/core/navigator';
 import {
+  CourseGate,
   DEFAULT_AUDIO,
+  OFF_COURSE_DELAY,
   IDLE_SOUNDSCAPE,
   beaconBeep,
   emphasize,
@@ -138,10 +140,37 @@ describe('cue mapping', () => {
     expect(soundscapeFor(nav.update(far, 90, 5, s.offRouteDelay + 1), DEFAULT_AUDIO).tension).toBe(1);
   });
 
+  it('course gate: brief sway stays "on course"; a lasting or big deviation does not', () => {
+    const g = new CourseGate();
+    const dz = 15;
+    expect(g.update(25, dz, 0)).toBe(true);
+    expect(g.update(25, dz, OFF_COURSE_DELAY - 0.1)).toBe(true); // still within the grace time
+    expect(g.update(5, dz, 1.5)).toBe(true); // swayed back: timer resets
+    expect(g.update(25, dz, 2)).toBe(true);
+    expect(g.update(25, dz, 2 + OFF_COURSE_DELAY)).toBe(false); // lasted: off course
+    expect(g.update(17, dz, 4)).toBe(false); // needs to get back inside the dead zone
+    expect(g.update(10, dz, 4.1)).toBe(true); // back on course at once
+    expect(new CourseGate().update(60, dz, 0)).toBe(false); // big deviation: at once
+  });
+
+  it('a debounced onCourse overrides the raw dead-zone test', () => {
+    const nav = new Navigator(r(), DEFAULT_NAV.bike);
+    const st = nav.update(destination(START, 90, 50), 65, 5, 0); // 25° off
+    expect(beaconBeep(st, DEFAULT_AUDIO)!.kind).toBe('beep');
+    expect(beaconBeep({ ...st, onCourse: true }, DEFAULT_AUDIO)!.kind).toBe('tick');
+  });
+
+  it('on course, the ambient "all good" tick is sparse', () => {
+    const nav = new Navigator(r(), DEFAULT_NAV.bike);
+    const cue = beaconBeep(nav.update(destination(START, 90, 50), 90, 5, 0), DEFAULT_AUDIO)!;
+    expect(cue.kind).toBe('tick');
+    expect(cue.interval).toBeGreaterThanOrEqual(5);
+  });
+
   it('events-only scheme stays quiet when roughly on course', () => {
     const events = SCHEMES.find((s) => s.id === 'events')!;
     const nav = new Navigator(r(), DEFAULT_NAV.bike);
-    const st = nav.update(destination(START, 90, 50), 75, 5, 0);
+    const st = nav.update(destination(START, 90, 50), 70, 5, 0); // 20° off: past the 15° dead zone
     expect(events.guidance!(st, DEFAULT_AUDIO, 'bike')).toBeNull();
     expect(SCHEMES[0].guidance!(st, DEFAULT_AUDIO, 'bike')?.kind).toBe('beep');
   });

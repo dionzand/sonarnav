@@ -162,6 +162,62 @@ export function chime(ctx: AudioContext, dest: AudioNode, t: number, spec: Chime
   }
 }
 
+const noiseBuffers = new WeakMap<BaseAudioContext, AudioBuffer>();
+/** A short shared white-noise buffer (one per context). */
+function noise(ctx: AudioContext): AudioBuffer {
+  let buf = noiseBuffers.get(ctx);
+  if (!buf) {
+    buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * 0.1), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    noiseBuffers.set(ctx, buf);
+  }
+  return buf;
+}
+
+export interface RattleSpec {
+  /** Pitch of the woody body (Hz); the rattle's noise sits a few octaves above. */
+  freq: number;
+  gain: number;
+  /** Number of quick strikes ("trrk" ≈ 3). */
+  grains?: number;
+  /** Seconds between strikes. */
+  spacing?: number;
+}
+
+/**
+ * A short, dry rattle: a few rapid strikes, each a click of band-passed noise plus a brief
+ * woody body tone. No ringing tail, so it stays crisp even when repeated rapidly
+ * (parking-sensor style) and doesn't blur into the background.
+ */
+export function rattle(ctx: AudioContext, dest: AudioNode, t: number, spec: RattleSpec): void {
+  const grains = spec.grains ?? 3;
+  const spacing = spec.spacing ?? 0.022;
+  for (let i = 0; i < grains; i++) {
+    const at = t + i * spacing;
+    // Later strikes are a little softer, like a shaken rattle settling.
+    const level = spec.gain * (1 - i * 0.22);
+    const src = new AudioBufferSourceNode(ctx, { buffer: noise(ctx) });
+    const band = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: Math.min(5000, spec.freq * 6), Q: 2.5 });
+    const g = new GainNode(ctx, { gain: 0 });
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(level, at + 0.002);
+    g.gain.setTargetAtTime(0, at + 0.002, 0.008);
+    src.connect(band).connect(g).connect(dest);
+    src.start(at);
+    src.stop(at + 0.06);
+    // Woody body.
+    const body = new OscillatorNode(ctx, { type: 'sine', frequency: spec.freq * 2 });
+    const bg = new GainNode(ctx, { gain: 0 });
+    bg.gain.setValueAtTime(0, at);
+    bg.gain.linearRampToValueAtTime(level * 0.6, at + 0.002);
+    bg.gain.setTargetAtTime(0, at + 0.002, 0.012);
+    body.connect(bg).connect(dest);
+    body.start(at);
+    body.stop(at + 0.08);
+  }
+}
+
 /** A synthetic room: stereo noise with an exponential tail, for a soft ambient wash. */
 export function reverbImpulse(ctx: AudioContext, seconds: number): AudioBuffer {
   const len = Math.ceil(ctx.sampleRate * seconds);

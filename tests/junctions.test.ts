@@ -65,6 +65,7 @@ describe('junctions', () => {
     expect(cue.repeats).toBe(3);
     expect(cue.freq2).toBe(cue.freq);
     expect(cue.pan).toBe(0);
+    expect(cue.once).toBe(nearFork.junction); // played once per junction
     expect(junctionCue(nearFork, { ...DEFAULT_AUDIO, junctions: 'off' }, 'foot')).toBeNull();
     // Too far away: nothing yet.
     expect(junctionCue(nav.update(at(100), 90, 1.4, 1), DEFAULT_AUDIO, 'foot')).toBeNull();

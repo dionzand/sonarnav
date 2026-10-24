@@ -20,10 +20,15 @@ Use **headphones**. Click **Start audio** (or press Enter), then press **T** for
    Right-click the map to move yourself. **From** lets you search a start point.
 2. Press **↑** to start moving. Speed holds when you release the key. Steer with **← / →**.
 3. Listen. The default **Ambient chimes** style uses soft bell tones with a little reverb, all on a pentatonic scale:
-   - **Chime**: comes from the direction to go (the green beacon dot, a point ahead on the route). Like a piano keyboard, the further **right** you need to go, the **higher** the note, and the further **left**, the **lower**. On course is the base note.
-   - **Faint droplet**, every few seconds: you're on course (inside the dead zone).
+   - **Chime**: you're off course. It comes from the direction to go. Like a piano keyboard, the further **right** you need to go, the **higher** the note, and the further **left**, the **lower**.
+     - A deviation must last over a second before chimes start (unless it's large), so swaying doesn't trigger them.
+     - On a curving road, "on course" means following the road's own direction where you are, so walking an arc stays quiet.
+   - **Faint droplet**, about every 6 s: you're on course (within ±15°).
    - **Deep low gong**: the route is behind you. The side it comes from is the way to turn.
-   - **Two-note turn cue**: a turn is coming. It moves from the centre towards the turn's real angle, stepping **up for a right turn and down for a left turn** (a bigger leap for sharp turns). It builds to a climax: it starts sparse and quiet, then accelerates steeply, climbs in pitch and swells as you approach. A soft open chord resolves it once you're through the turn.
+   - **Rattle ("trrk-trrk")**: a turn is coming.
+     - It's a dry, woodblock-like rattle from the turn's real direction, with the second strike **higher for a right turn, lower for a left turn**.
+     - It speeds up like a parking sensor (sparse → rapid), climbs in pitch and swells as you approach.
+     - A soft open chord resolves it once you're through the turn.
    - **Two falling, slightly clouded notes**: you're off the route. A new route is planned automatically, and a soft rising arpeggio confirms it.
    - **Long pentatonic arpeggio**: you've arrived.
 
@@ -32,7 +37,7 @@ Use **headphones**. Click **Start audio** (or press Enter), then press **T** for
    - **Breeze**: an airy layer that always comes *from the direction to go*. It's faint when you're on course and grows as you turn away. Turn it off with the "Directional breeze" checkbox.
    - The background dips briefly under each chime, so the chimes sit inside it.
 
-   **Junctions** (Route panel): where the route goes *straight* through a junction that has other ways to go, you hear **"keep straight"**: two level notes from straight ahead (in the piano metaphor, up = right, down = left, level = straight on).
+   **Junctions** (Route panel): where the route goes *straight* through a junction that has other ways to go, you hear **"keep straight"** once: two level notes from straight ahead (in the piano metaphor, up = right, down = left, level = straight on).
    - Choose between "at forks" (default: only where another branch is within 50° of your way, so easy to take by mistake; you then hear three notes), "at every junction", or off.
    - On the map, junctions with a cue are marked with small dots, violet at forks.
 

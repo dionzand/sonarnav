@@ -32,10 +32,10 @@ export const SCHEMES: CueScheme[] = [
     id: 'beacon',
     name: 'Beacon',
     description:
-      'Notes come from the direction to go. Like a piano: higher note = go right, lower note = go left, ' +
-      'and the further off, the bigger the step. A faint droplet means you are on course. ' +
-      'A deep, low note means the route is behind you. Before a turn, a two-note cue moves towards the turn ' +
-      '(stepping up for right, down for left) and builds up — faster, higher, louder — until the corner.',
+      'When you drift off course, notes come from the direction to go. Like a piano: higher note = go right, ' +
+      'lower note = go left. A faint droplet every few seconds means you are on course. ' +
+      'A deep, low note means the route is behind you. Before a turn, a dry rattle ("trrk-trrk") sounds from the ' +
+      'turn and speeds up like a parking sensor until the corner; its second strike is higher for right, lower for left.',
     guidance: (st, s) => beaconBeep(st, s),
     maneuver: (st, s, p) => turnPreview(st, s, p) ?? junctionCue(st, s, p),
   },

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LngLat, destination } from '../src/core/geo';
 import { DEFAULT_NAV, Navigator } from '../src/core/navigator';
+import { buildRoute } from '../src/core/route';
 import { makeRoute } from './helpers';
 
 const START: LngLat = [4.9, 52.37];
@@ -66,6 +67,27 @@ describe('navigator', () => {
     const back = nav.update(destination(START, 90, 100), 90, 5, 11);
     expect(back.offRoute).toBe(false);
     expect(back.events).toContain('backOnRoute');
+  });
+
+  it('walking a gently curving road reads as on course', () => {
+    // A long arc: radius 60 m, turning 2° every ~2 m (no single bend reaches a "turn").
+    const R = 60;
+    const geometry: [number, number][] = [];
+    // Centre 60 m north of START. Starting due south of it you head east, then the road
+    // curves steadily left (towards north) around the centre.
+    for (let deg = 0; deg <= 120; deg += 2) {
+      geometry.push(destination(destination(START, 0, R), 180 - deg, R));
+    }
+    const arc = buildRoute('foot', geometry, [], 300);
+    expect(arc.maneuvers).toHaveLength(0);
+    const nav = new Navigator(arc, DEFAULT_NAV.foot);
+    for (let deg = 20; deg <= 90; deg += 10) {
+      const p = destination(destination(START, 0, R), 180 - deg, R);
+      // Tangent heading when walking counter-clockwise round a centre to the north: 90° − deg.
+      const st = nav.update(p, (90 - deg + 360) % 360, 1.4, deg, 5);
+      // Aiming 20 m ahead along the arc would give ~10° here.
+      expect(Math.abs(st.relBearing)).toBeLessThan(3);
+    }
   });
 
   it('GPS offset beside the route does not swing the direction cue', () => {

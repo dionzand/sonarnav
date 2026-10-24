@@ -25,6 +25,12 @@ export const DEFAULT_NAV: Record<'foot' | 'bike', NavSettings> = {
  * guidance follows the route's own direction instead of aiming from your (noisy) position.
  */
 const ON_LINE_TOLERANCE = 8;
+/** The route's local direction is measured over ±this many metres around you. */
+const TANGENT_WINDOW = 4;
+/** Off the line, steer back as if aiming at a point this far ahead on it (m)… */
+const APPROACH = 15;
+/** …but never more than this many degrees off the road's own direction. */
+const MAX_CORRECTION = 40;
 
 /** Circular interpolation between two bearings. */
 function lerpBearing(a: number, b: number, t: number): number {
@@ -45,7 +51,11 @@ export interface NavState {
   crossTrack: number;
   remaining: number;
   beacon: LngLat;
-  /** Signed angle from your heading to the beacon. +right / -left, ±180 behind. */
+  /**
+   * Signed angle from your heading to the way you should go. +right / -left, ±180 behind.
+   * On the route this follows the road's direction where you are (so walking a curve
+   * reads as on course); near a turn it points around the corner; far off it points back.
+   */
   relBearing: number;
   distanceToBeacon: number;
   /** Direction of the route where you are. */
@@ -57,6 +67,11 @@ export interface NavState {
   distanceToJunction: number;
   offRoute: boolean;
   arrived: boolean;
+  /**
+   * Debounced "within the dead zone", filled in by the audio engine (it owns the dead-zone
+   * setting). When absent, cue mapping falls back to comparing relBearing directly.
+   */
+  onCourse?: boolean;
   /** Events raised by this update. */
   events: NavEvent[];
 }
@@ -143,14 +158,32 @@ export class Navigator {
     }
     const beacon = pointAlong(route.geometry, route.cum, beaconAlong).point;
     const distanceToBeacon = distance(position, beacon);
-    // Aim: close to the route (within GPS uncertainty) follow the route's own direction,
-    // measured from your snapped point, so a few metres of GPS error don't swing the cue.
-    // Further away, aim from where you are, which also steers you back onto the route.
+    // Aim: which way you should be heading.
     const tol = Math.max(ON_LINE_TOLERANCE, accuracy);
-    const fromSnapped = distance(proj.point, beacon) < 0.5 ? null : bearing(proj.point, beacon);
     const fromYou = distanceToBeacon < 0.5 ? null : bearing(position, beacon);
-    const w = Math.min(1, Math.max(0, (proj.distance - tol) / tol));
-    const aim = fromSnapped === null ? fromYou : fromYou === null ? fromSnapped : lerpBearing(fromSnapped, fromYou, w);
+    let aim: number | null;
+    if (next && s.cornerCommit > 0 && distanceToNext <= s.cornerCommit) {
+      // At a corner the beacon has been released past it: point around the corner.
+      // That swing is the turn cue.
+      aim = distance(proj.point, beacon) < 0.5 ? fromYou : bearing(proj.point, beacon);
+    } else {
+      // Follow the road's own direction right here. Aiming at a point further ahead would
+      // cut the inside of every curve and make a gently curving road sound "off course".
+      const behindPt = pointAlong(route.geometry, route.cum, this.along - TANGENT_WINDOW).point;
+      const aheadPt = pointAlong(route.geometry, route.cum, this.along + TANGENT_WINDOW).point;
+      const tangent = distance(behindPt, aheadPt) < 0.5 ? fromYou : bearing(behindPt, aheadPt);
+      aim = tangent;
+      // Drifted off the line by more than the GPS uncertainty? Steer gently back towards it.
+      const excess = proj.distance - tol;
+      if (tangent !== null && excess > 0) {
+        const side = Math.sign(angleDiff(tangent, bearing(position, proj.point)));
+        const correction = Math.min(MAX_CORRECTION, (Math.atan2(excess, APPROACH) * 180) / Math.PI);
+        aim = tangent + side * correction;
+        // Far away (more than twice the tolerance): blend towards aiming straight at the beacon.
+        const w = Math.min(1, Math.max(0, (proj.distance - 2 * tol) / (2 * tol)));
+        if (fromYou !== null) aim = lerpBearing(aim, fromYou, w);
+      }
+    }
     const relBearing = aim === null ? 0 : angleDiff(heading, aim);
 
     const seg = proj.segment;

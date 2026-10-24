@@ -33,11 +33,12 @@ interface Saved {
   /** Settings schema; bumped when defaults change in ways old saved values shouldn't override. */
   schema?: number;
 }
-const SCHEMA = 3;
+const SCHEMA = 4;
 function load(): Saved {
   try {
     const s = JSON.parse(localStorage.getItem(STORE_KEY) ?? '{}') as Saved;
-    if ((s.schema ?? 2) < 3) {
+    const from = s.schema ?? 2;
+    if (from < 3) {
       // v3 retuned navigation (GPS-tolerant look-ahead / off-route) and the panning
       // (binaural, emphasis, longer turn build-up): drop those, keep personal taste.
       delete s.nav;
@@ -45,6 +46,10 @@ function load(): Saved {
         delete s.audio.panMode;
         delete s.audio.turnWarn;
       }
+    }
+    if (from < 4 && s.audio) {
+      // v4 widened the default dead zone (10° → 15°) as part of "fewer cues".
+      delete s.audio.deadZone;
     }
     return s;
   } catch {

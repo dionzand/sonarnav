@@ -36,7 +36,7 @@ export interface AudioSettings {
 export const DEFAULT_AUDIO: AudioSettings = {
   style: 'ambient',
   volume: 0.6,
-  deadZone: 10,
+  deadZone: 15,
   silentWhenAligned: false,
   rate: 1,
   basePitch: 440,
@@ -96,6 +96,8 @@ export interface Cue {
   kind: 'beep' | 'tick' | 'behind' | 'chirp' | 'straight';
   /** 'straight': how many equal notes (3 at a fork). */
   repeats?: number;
+  /** Play only once per this object (e.g. the junction a "keep straight" cue belongs to). */
+  once?: object;
   /** Direction, degrees: 0 ahead, +90 right, -90 left, ±180 behind. Used by HRTF. */
   azimuth: number;
   /** Stereo pan -1..1, used in stereo mode. */
@@ -143,9 +145,46 @@ export function pitchFor(angle: number, base: number, scale = false): number {
   return base * Math.pow(2, (up ? step : -step) / 12);
 }
 
-/** Ambient style breathes slower than classic beeps. */
-function pace(s: AudioSettings): number {
-  return s.rate / (s.style === 'ambient' ? 1.6 : 1);
+/**
+ * Guidance repeat intervals (s, before `rate`). Ambient is deliberately sparse:
+ * a soft "all good" tick only every few seconds, and unhurried off-course notes.
+ */
+const GUIDE_INTERVAL = {
+  ambient: { onCourse: 6, offSlight: 2.2, offFar: 1.0, behind: 1.3 },
+  classic: { onCourse: 1.6, offSlight: 0.75, offFar: 0.35, behind: 0.45 },
+} as const;
+
+/** A deviation must last this long (s) before it counts as off course… */
+export const OFF_COURSE_DELAY = 1.2;
+/** …unless it's this big (°): then it counts at once. */
+const OFF_COURSE_NOW = 45;
+/** Leaving needs this much beyond the dead zone (°); returning just needs the dead zone. */
+const OFF_COURSE_MARGIN = 3;
+
+/**
+ * Debounces "on course": a moment of swaying, a GPS hiccup or a slight curve shouldn't
+ * immediately trigger "wrong way" notes. Coming back on course counts straight away.
+ */
+export class CourseGate {
+  private on = true;
+  private outSince: number | null = null;
+
+  /** `time` in seconds. */
+  update(relBearing: number, deadZone: number, time: number): boolean {
+    const a = Math.abs(relBearing);
+    if (this.on) {
+      if (a > deadZone + OFF_COURSE_MARGIN) {
+        this.outSince ??= time;
+        if (time - this.outSince >= OFF_COURSE_DELAY || a > OFF_COURSE_NOW) this.on = false;
+      } else {
+        this.outSince = null;
+      }
+    } else if (a <= deadZone) {
+      this.on = true;
+      this.outSince = null;
+    }
+    return this.on;
+  }
 }
 
 export function isBehind(angle: number): boolean {
@@ -208,6 +247,7 @@ export const JUNCTION_WARN: Record<Profile, number> = { foot: 15, bike: 30 };
  * "Keep straight" at a junction the route passes through: equal notes from straight ahead
  * (on the piano metaphor: up = right, down = left, level = straight on). Three notes and a
  * little louder at a fork, where a neighbouring branch is easy to take by mistake.
+ * Plays once per junction (`once`).
  */
 export function junctionCue(state: NavState, s: AudioSettings, profile: Profile): Cue | null {
   const j = state.junction;
@@ -219,6 +259,7 @@ export function junctionCue(state: NavState, s: AudioSettings, profile: Profile)
   const f = s.basePitch * (s.style === 'ambient' ? 0.75 : 1.5);
   return {
     kind: 'straight',
+    once: j,
     repeats: j.fork ? 3 : 2,
     azimuth: 0,
     pan: 0,
@@ -236,6 +277,7 @@ export function beaconBeep(state: NavState, s: AudioSettings): Cue | null {
   if (state.arrived) return null;
   const r = state.relBearing;
   const a = Math.abs(r);
+  const iv = GUIDE_INTERVAL[s.style];
   if (isBehind(r)) {
     // Low and buzzy, fully on the side you should turn towards.
     return {
@@ -246,11 +288,13 @@ export function beaconBeep(state: NavState, s: AudioSettings): Cue | null {
       timbre: 'sawtooth',
       duration: 0.18,
       gain: 0.35,
-      interval: 0.45 / pace(s),
+      interval: iv.behind / s.rate,
     };
   }
   const az = emphasize(r, s.directionEmphasis);
-  if (a <= s.deadZone && !state.offRoute) {
+  // `onCourse` (if the caller provides it) is a debounced version of the dead-zone test.
+  const aligned = state.onCourse ?? a <= s.deadZone;
+  if (aligned && !state.offRoute) {
     if (s.silentWhenAligned) return { ...silent(), interval: 0.25 };
     return {
       kind: 'tick',
@@ -260,7 +304,7 @@ export function beaconBeep(state: NavState, s: AudioSettings): Cue | null {
       timbre: 'sine',
       duration: 0.035,
       gain: 0.25,
-      interval: 1.6 / pace(s),
+      interval: iv.onCourse / s.rate,
     };
   }
   return {
@@ -273,7 +317,7 @@ export function beaconBeep(state: NavState, s: AudioSettings): Cue | null {
     duration: 0.09,
     gain: state.offRoute ? 0.3 : 0.5,
     // More urgent the further off you are.
-    interval: (0.75 - 0.4 * Math.min(1, a / 90)) / pace(s),
+    interval: (iv.offSlight - (iv.offSlight - iv.offFar) * Math.min(1, a / 90)) / s.rate,
   };
 }
 
