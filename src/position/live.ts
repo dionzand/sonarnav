@@ -133,6 +133,6 @@ export class LiveGps implements PositionSource {
       this.heading = this.compass;
       this.usedSource = 'compass';
     }
-    return { position: this.position, heading: this.heading, speed: this.speed, time };
+    return { position: this.position, heading: this.heading, speed: this.speed, time, accuracy: this.accuracy ?? undefined };
   }
 }

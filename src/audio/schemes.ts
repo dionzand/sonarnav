@@ -1,6 +1,6 @@
 import { NavState } from '../core/navigator';
 import { Profile } from '../core/route';
-import { AudioSettings, Cue, beaconBeep, isBehind, panFor, pitchFor, turnPreview } from './mapping';
+import { AudioSettings, Cue, beaconBeep, emphasize, isBehind, panFor, pitchFor, turnPreview } from './mapping';
 
 /** Parameters for a sustained tone (continuous schemes). */
 export interface ToneParams {
@@ -32,9 +32,10 @@ export const SCHEMES: CueScheme[] = [
     id: 'beacon',
     name: 'Beacon',
     description:
-      'Notes come from the direction of a point just ahead on your route. Higher note = more on course. ' +
-      'A faint droplet means you are on course. A deep, low note means the route is behind you. ' +
-      'Before a turn, a two-note cue sounds from the real turn angle and repeats faster as you get closer.',
+      'Notes come from the direction to go. Like a piano: higher note = go right, lower note = go left, ' +
+      'and the further off, the bigger the step. A faint droplet means you are on course. ' +
+      'A deep, low note means the route is behind you. Before a turn, a two-note cue moves towards the turn ' +
+      '(stepping up for right, down for left) and builds up — faster, higher, louder — until the corner.',
     guidance: (st, s) => beaconBeep(st, s),
     maneuver: (st, s, p) => turnPreview(st, s, p),
   },
@@ -42,16 +43,17 @@ export const SCHEMES: CueScheme[] = [
     id: 'tone',
     name: 'Continuous tone',
     description:
-      'One steady tone that follows the beacon: its stereo position shows the direction and its pitch shows how far off course you are. ' +
+      'One steady tone that follows the direction to go: its position shows the direction, and its pitch rises for right and falls for left. ' +
       'It gets quiet when you are on course. Turn cues work as in Beacon.',
     tone: (st, s) => {
       if (st.arrived) return null;
       const r = st.relBearing;
       const behind = isBehind(r);
       const aligned = Math.abs(r) <= s.deadZone;
+      const az = behind ? (r >= 0 ? 90 : -90) : emphasize(r, s.directionEmphasis);
       return {
-        azimuth: r,
-        pan: behind ? (r >= 0 ? 1 : -1) : panFor(r),
+        azimuth: az,
+        pan: panFor(az),
         freq: behind ? s.basePitch / 4 : pitchFor(r, s.basePitch / 2),
         gain: aligned ? 0.06 : behind ? 0.2 : 0.18,
         timbre: behind ? 'sawtooth' : st.offRoute ? 'square' : 'sine',

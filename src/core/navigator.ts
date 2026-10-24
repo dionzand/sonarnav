@@ -16,9 +16,20 @@ export interface NavSettings {
 }
 
 export const DEFAULT_NAV: Record<'foot' | 'bike', NavSettings> = {
-  foot: { lookaheadMin: 12, lookaheadSeconds: 6, cornerCommit: 4, offRouteDistance: 20, offRouteDelay: 3, arriveRadius: 8 },
-  bike: { lookaheadMin: 20, lookaheadSeconds: 4, cornerCommit: 10, offRouteDistance: 30, offRouteDelay: 2, arriveRadius: 12 },
+  foot: { lookaheadMin: 20, lookaheadSeconds: 8, cornerCommit: 6, offRouteDistance: 30, offRouteDelay: 5, arriveRadius: 10 },
+  bike: { lookaheadMin: 25, lookaheadSeconds: 4, cornerCommit: 10, offRouteDistance: 35, offRouteDelay: 3, arriveRadius: 15 },
 };
+
+/**
+ * Within this distance of the route (or the GPS accuracy, if larger) you count as "on" it:
+ * guidance follows the route's own direction instead of aiming from your (noisy) position.
+ */
+const ON_LINE_TOLERANCE = 8;
+
+/** Circular interpolation between two bearings. */
+function lerpBearing(a: number, b: number, t: number): number {
+  return (a + angleDiff(a, b) * t + 360) % 360;
+}
 
 export type NavEvent = 'offRoute' | 'backOnRoute' | 'arrived' | 'maneuverPassed';
 
@@ -68,9 +79,14 @@ export class Navigator {
     this.nextIndex = 0;
   }
 
-  /** `time` in seconds (monotonic). */
-  update(position: LngLat, heading: number, speed: number, time: number): NavState {
-    const { route, settings: s } = this;
+  /**
+   * `time` in seconds (monotonic). `accuracy` is the GPS error estimate in metres (0 = exact):
+   * the noisier the fix, the more slack before declaring you off-route.
+   */
+  update(position: LngLat, heading: number, speed: number, time: number, accuracy = 0): NavState {
+    const { route } = this;
+    // GPS noise mustn't push you "off route": the threshold grows with the reported error.
+    const s = { ...this.settings, offRouteDistance: Math.max(this.settings.offRouteDistance, accuracy * 1.5 + 10) };
     const events: NavEvent[] = [];
 
     // Search a window around the last known progress so self-crossing routes don't
@@ -118,7 +134,15 @@ export class Navigator {
     }
     const beacon = pointAlong(route.geometry, route.cum, beaconAlong).point;
     const distanceToBeacon = distance(position, beacon);
-    const relBearing = distanceToBeacon < 0.5 ? 0 : angleDiff(heading, bearing(position, beacon));
+    // Aim: close to the route (within GPS uncertainty) follow the route's own direction,
+    // measured from your snapped point, so a few metres of GPS error don't swing the cue.
+    // Further away, aim from where you are, which also steers you back onto the route.
+    const tol = Math.max(ON_LINE_TOLERANCE, accuracy);
+    const fromSnapped = distance(proj.point, beacon) < 0.5 ? null : bearing(proj.point, beacon);
+    const fromYou = distanceToBeacon < 0.5 ? null : bearing(position, beacon);
+    const w = Math.min(1, Math.max(0, (proj.distance - tol) / tol));
+    const aim = fromSnapped === null ? fromYou : fromYou === null ? fromSnapped : lerpBearing(fromSnapped, fromYou, w);
+    const relBearing = aim === null ? 0 : angleDiff(heading, aim);
 
     const seg = proj.segment;
     const routeBearing = bearing(route.geometry[seg], route.geometry[seg + 1] ?? route.geometry[seg]);

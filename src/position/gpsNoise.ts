@@ -49,6 +49,8 @@ export class NoisyGps implements PositionSource {
       ...truth,
       position: err > 0 ? destination(truth.position, dir, err) : truth.position,
       heading: truth.heading + headingSigma * gauss(),
+      // Like a phone, report a ~95 % error radius.
+      accuracy: sigma * 2,
     };
     return this.last;
   }

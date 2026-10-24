@@ -68,6 +68,33 @@ describe('navigator', () => {
     expect(back.events).toContain('backOnRoute');
   });
 
+  it('GPS offset beside the route does not swing the direction cue', () => {
+    const nav = new Navigator(route(), DEFAULT_NAV.foot);
+    // Walking straight along the route, but GPS puts you 8 m to the side (±10 m accuracy).
+    const noisy = destination(destination(START, 90, 60), 0, 8);
+    const st = nav.update(noisy, 90, 1.4, 0, 10);
+    // Aiming from the noisy dot would give ~20°; following the route gives ~0°.
+    expect(Math.abs(st.relBearing)).toBeLessThan(3);
+  });
+
+  it('far from the route, the cue points back towards it', () => {
+    const nav = new Navigator(route(), DEFAULT_NAV.foot);
+    const away = destination(destination(START, 90, 60), 0, 25);
+    const st = nav.update(away, 90, 1.4, 0, 5);
+    expect(st.relBearing).toBeGreaterThan(20); // route is to the right (south)
+  });
+
+  it('poor GPS accuracy widens the off-route threshold', () => {
+    const s = DEFAULT_NAV.foot;
+    const p = destination(destination(START, 90, 100), 0, s.offRouteDistance + 5);
+    const precise = new Navigator(route(), s);
+    precise.update(p, 90, 1.4, 0, 5);
+    expect(precise.update(p, 90, 1.4, s.offRouteDelay + 1, 5).offRoute).toBe(true);
+    const sloppy = new Navigator(route(), s);
+    sloppy.update(p, 90, 1.4, 0, 25);
+    expect(sloppy.update(p, 90, 1.4, s.offRouteDelay + 1, 25).offRoute).toBe(false);
+  });
+
   it('arrives at the end', () => {
     const nav = new Navigator(route(), DEFAULT_NAV.bike);
     nav.update(destination(START, 90, 199), 90, 5, 0);

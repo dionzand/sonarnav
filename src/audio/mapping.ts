@@ -2,6 +2,7 @@ import { NavState } from '../core/navigator';
 import { MIN_TURN_ANGLE, Profile } from '../core/route';
 
 export type Timbre = OscillatorType;
+export type PanMode = 'binaural' | 'hrtf' | 'stereo';
 
 export interface AudioSettings {
   /** Ambient: soft chimes with reverb, pentatonic pitches, calmer pace. Classic: crisp beeps. */
@@ -15,8 +16,13 @@ export interface AudioSettings {
   rate: number;
   /** Pitch (Hz) of a perfectly aligned beep. */
   basePitch: number;
-  /** HRTF gives real front/back cues on headphones; stereo is plain left/right panning. */
-  panMode: 'hrtf' | 'stereo';
+  /**
+   * binaural: time delay + level + head-shadow filtering per ear (strongest left/right).
+   * hrtf: the browser's 3D model (some front/back cues). stereo: plain panning.
+   */
+  panMode: PanMode;
+  /** Exaggerates angles so small deviations already sound clearly to one side (1 = true angle). */
+  directionEmphasis: number;
   /** Start the turn preview this many metres before a turn. */
   turnWarn: Record<Profile, number>;
   /** Ambient background (pad + breeze) level, 0 = off. Ambient style only. */
@@ -32,8 +38,9 @@ export const DEFAULT_AUDIO: AudioSettings = {
   silentWhenAligned: false,
   rate: 1,
   basePitch: 440,
-  panMode: 'stereo',
-  turnWarn: { foot: 20, bike: 50 },
+  panMode: 'binaural',
+  directionEmphasis: 1.6,
+  turnWarn: { foot: 30, bike: 60 },
   soundscape: 0.5,
   breeze: true,
 };
@@ -74,8 +81,8 @@ export function soundscapeFor(state: NavState | null, s: AudioSettings): Soundsc
     tension: state.offRoute ? 1 : 0,
     cutoff: 1400 - 900 * off,
     breath: 0.05 + Math.min(0.2, state.speed * 0.025),
-    breezeAzimuth: state.relBearing,
-    breezePan: behind ? (state.relBearing >= 0 ? 1 : -1) : panFor(state.relBearing),
+    breezeAzimuth: behind ? (state.relBearing >= 0 ? 90 : -90) : emphasize(state.relBearing, s.directionEmphasis),
+    breezePan: behind ? (state.relBearing >= 0 ? 1 : -1) : panFor(emphasize(state.relBearing, s.directionEmphasis)),
     // Barely there when on course, clearly present when you need to turn.
     breezeLevel: !s.breeze || state.arrived ? 0 : 0.15 + 0.85 * off,
   };
@@ -103,19 +110,32 @@ export function panFor(angle: number): number {
   return Math.max(-1, Math.min(1, angle / 90));
 }
 
-// Major pentatonic, descending from the base note: every step stays consonant.
+/**
+ * Exaggerate a frontal angle so small deviations already sound clearly sideways
+ * (e.g. ×1.6: 20° sounds like 32°). Angles behind you are left alone.
+ */
+export function emphasize(angle: number, emphasis: number): number {
+  if (Math.abs(angle) > 90) return angle;
+  return Math.max(-90, Math.min(90, angle * emphasis));
+}
+
+// Major pentatonic steps (semitones): every note stays consonant with the others.
+const PENTATONIC_UP = [0, 2, 4, 7, 9, 12];
 const PENTATONIC_DOWN = [0, 3, 5, 8, 10, 12];
 
+const nearest = (steps: number[], x: number) =>
+  steps.reduce((best, s) => (Math.abs(s - x) < Math.abs(best - x) ? s : best));
+
 /**
- * Pitch falls one octave between dead-ahead and 90° off. With `scale`, it steps
- * through pentatonic notes instead of sliding, so it sounds musical rather than alarming.
+ * Like a piano keyboard: on course is the base note; the further you need to go RIGHT
+ * the HIGHER the note (up to an octave at 90°), and LEFT goes LOWER. With `scale`,
+ * pitches step through pentatonic notes so it stays musical.
  */
 export function pitchFor(angle: number, base: number, scale = false): number {
   const semis = (Math.min(90, Math.abs(angle)) / 90) * 12;
-  const step = scale
-    ? PENTATONIC_DOWN.reduce((best, s) => (Math.abs(s - semis) < Math.abs(best - semis) ? s : best))
-    : semis;
-  return base * Math.pow(2, -step / 12);
+  const up = angle >= 0;
+  const step = scale ? nearest(up ? PENTATONIC_UP : PENTATONIC_DOWN, semis) : semis;
+  return base * Math.pow(2, (up ? step : -step) / 12);
 }
 
 /** Ambient style breathes slower than classic beeps. */
@@ -127,12 +147,22 @@ export function isBehind(angle: number): boolean {
   return Math.abs(angle) > 90;
 }
 
-/** Turn-cue repeat interval (s) when first announced → right at the corner, before `rate`. */
-const TURN_INTERVAL = { ambient: [3.2, 1.2], classic: [1.4, 0.3] } as const;
+/** Turn-cue repeat interval (s): when first announced → right at the corner, before `rate`. */
+const TURN_INTERVAL = { ambient: [2.6, 0.3], classic: [1.3, 0.15] } as const;
+
+/** Repeat interval for a turn cue: shrinks geometrically, so it accelerates towards the corner. */
+export function turnInterval(closeness: number, style: AudioSettings['style'], rate = 1): number {
+  const [far, near] = TURN_INTERVAL[style];
+  return (far * Math.pow(near / far, Math.min(1, Math.max(0, closeness)))) / rate;
+}
 
 /**
- * Turn-preview cue: panned at the real turn angle. Distance is told twice:
- * it repeats faster and swells from quiet to full volume as you close in.
+ * Turn-preview cue, built like a musical climax towards the corner:
+ * - rhythm: accelerates geometrically (slow pulses → rapid fire at the corner)
+ * - pitch: climbs a pentatonic ladder as you get closer
+ * - volume: swells from quiet to full
+ * - shape: two notes moving from centre towards the turn's real angle, stepping
+ *   UP for a right turn and DOWN for a left turn (a fifth instead of a fourth when sharp)
  */
 export function turnPreview(state: NavState, s: AudioSettings, profile: Profile): Cue | null {
   const next = state.next;
@@ -143,23 +173,26 @@ export function turnPreview(state: NavState, s: AudioSettings, profile: Profile)
   const warn = s.turnWarn[profile];
   if (state.distanceToNext > warn || state.distanceToNext < 0) return null;
   const closeness = 1 - state.distanceToNext / warn; // 0 at warn distance → 1 at the turn
-  const [far, near] = TURN_INTERVAL[s.style];
-  const interval = (far - (far - near) * closeness) / s.rate;
   const sharp = Math.abs(next.angle) > 120;
-  // Ambient: a fifth below the base note, so it sits under the guidance chimes.
-  const f = s.basePitch * (s.style === 'ambient' ? 0.75 : 1.5);
+  const right = next.angle > 0;
+  // Ambient starts a fifth below the base note, so it sits under the guidance chimes.
+  const start = s.basePitch * (s.style === 'ambient' ? 0.75 : 1.5);
+  const rise = PENTATONIC_UP[Math.min(3, Math.floor(closeness * 4))]; // 0, 2, 4, 7 semitones
+  const f = start * Math.pow(2, rise / 12);
+  const leap = sharp ? 1.5 : 1.335;
+  const azimuth = emphasize(next.angle, s.directionEmphasis);
   return {
     kind: 'chirp',
-    azimuth: next.angle,
-    pan: panFor(next.angle),
+    azimuth,
+    pan: panFor(azimuth),
     freq: f,
-    // Sharp turns and U-turns step down a fifth; normal turns step up a fourth.
-    freq2: sharp ? f / 1.5 : f * 1.335,
+    freq2: right ? f * leap : f / leap,
     timbre: 'triangle',
-    duration: 0.16,
+    // Notes get shorter as the rhythm speeds up, so it doesn't turn to mush.
+    duration: 0.16 - 0.06 * closeness,
     // Loudness grows with closeness (slightly curved so the last metres stand out).
     gain: 0.18 + 0.45 * Math.pow(closeness, 1.3),
-    interval,
+    interval: turnInterval(closeness, s.style, s.rate),
   };
 }
 
@@ -172,7 +205,7 @@ export function beaconBeep(state: NavState, s: AudioSettings): Cue | null {
     // Low and buzzy, fully on the side you should turn towards.
     return {
       kind: 'behind',
-      azimuth: r,
+      azimuth: r >= 0 ? 90 : -90,
       pan: r >= 0 ? 1 : -1,
       freq: s.basePitch / 4,
       timbre: 'sawtooth',
@@ -181,12 +214,13 @@ export function beaconBeep(state: NavState, s: AudioSettings): Cue | null {
       interval: 0.45 / pace(s),
     };
   }
+  const az = emphasize(r, s.directionEmphasis);
   if (a <= s.deadZone && !state.offRoute) {
     if (s.silentWhenAligned) return { ...silent(), interval: 0.25 };
     return {
       kind: 'tick',
-      azimuth: r,
-      pan: panFor(r),
+      azimuth: az,
+      pan: panFor(az),
       freq: s.basePitch,
       timbre: 'sine',
       duration: 0.035,
@@ -196,8 +230,8 @@ export function beaconBeep(state: NavState, s: AudioSettings): Cue | null {
   }
   return {
     kind: 'beep',
-    azimuth: r,
-    pan: panFor(r),
+    azimuth: az,
+    pan: panFor(az),
     freq: pitchFor(r, s.basePitch, s.style === 'ambient'),
     // A square wave tells you you're off the route while still pointing back to it.
     timbre: state.offRoute ? 'square' : 'sine',

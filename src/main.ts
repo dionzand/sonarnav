@@ -28,17 +28,30 @@ interface Saved {
   position?: LngLat;
   speech?: boolean;
   headingSource?: HeadingSource;
+  /** Settings schema; bumped when defaults change in ways old saved values shouldn't override. */
+  schema?: number;
 }
+const SCHEMA = 3;
 function load(): Saved {
   try {
-    return JSON.parse(localStorage.getItem(STORE_KEY) ?? '{}') as Saved;
+    const s = JSON.parse(localStorage.getItem(STORE_KEY) ?? '{}') as Saved;
+    if ((s.schema ?? 2) < 3) {
+      // v3 retuned navigation (GPS-tolerant look-ahead / off-route) and the panning
+      // (binaural, emphasis, longer turn build-up): drop those, keep personal taste.
+      delete s.nav;
+      if (s.audio) {
+        delete s.audio.panMode;
+        delete s.audio.turnWarn;
+      }
+    }
+    return s;
   } catch {
     return {};
   }
 }
 function save(): void {
   try {
-    const s: Saved = { audio: audioSettings, nav: navSettings, scheme: audio.scheme.id, profile: sim.profile, position: sim.position, speech: speechBox.checked, headingSource: live.headingSource };
+    const s: Saved = { schema: SCHEMA, audio: audioSettings, nav: navSettings, scheme: audio.scheme.id, profile: sim.profile, position: sim.position, speech: speechBox.checked, headingSource: live.headingSource };
     localStorage.setItem(STORE_KEY, JSON.stringify(s));
   } catch {
     /* private mode etc. */
@@ -296,6 +309,7 @@ interface SliderSpec {
 const sliders: SliderSpec[] = [
   { id: 'volume', get: () => audioSettings.volume, set: (v) => audio.setVolume(v), fmt: (v) => `${Math.round(v * 100)}%` },
   { id: 'soundscape', get: () => audioSettings.soundscape, set: (v) => (audioSettings.soundscape = v), fmt: (v) => (v ? `${Math.round(v * 100)}%` : 'off') },
+  { id: 'emphasis', get: () => audioSettings.directionEmphasis, set: (v) => (audioSettings.directionEmphasis = v), fmt: (v) => `${v.toFixed(1)}×` },
   { id: 'deadzone', get: () => audioSettings.deadZone, set: (v) => (audioSettings.deadZone = v), fmt: (v) => `${v}°` },
   { id: 'rate', get: () => audioSettings.rate, set: (v) => (audioSettings.rate = v), fmt: (v) => `${v.toFixed(1)}×` },
   { id: 'pitch', get: () => audioSettings.basePitch, set: (v) => (audioSettings.basePitch = v) },
@@ -330,6 +344,7 @@ const panSel = $<HTMLSelectElement>('panmode');
 panSel.value = audioSettings.panMode;
 panSel.addEventListener('change', () => {
   audioSettings.panMode = panSel.value as AudioSettings['panMode'];
+  announce(`Panning: ${panSel.selectedOptions[0].text}. Press T to hear it.`);
   save();
 });
 const breezeBox = $<HTMLInputElement>('breeze');
@@ -381,6 +396,11 @@ function setSound(on: boolean): void {
   syncAudioBtn();
 }
 startBtn.addEventListener('click', () => setSound(!(audio.running && !audio.muted)));
+$('test-sweep').addEventListener('click', () => {
+  const sweep = () => audio.testSweep();
+  if (!audio.running || audio.muted) void startAudio().then(sweep);
+  else sweep();
+});
 syncAudioBtn();
 
 // ---------- live GPS (phone) ----------
@@ -685,7 +705,7 @@ function step(): void {
   }
   lastFix = fix;
   if (nav && route && fix) {
-    navState = nav.update(fix.position, normalize360(fix.heading), fix.speed, now / 1000);
+    navState = nav.update(fix.position, normalize360(fix.heading), fix.speed, now / 1000, fix.accuracy ?? 0);
     handleEvents(navState);
   } else {
     navState = null;

@@ -1,5 +1,5 @@
 import { SoundscapeParams } from './mapping';
-import { PanMode, spatializer } from './synth';
+import { PanMode, Spatial, createSpatial } from './synth';
 
 // Pad chord as ratios of the root (two octaves below the base note).
 // Resolved: root, fifth, octave, major tenth. Suspended: the tenth rises to an eleventh (sus4).
@@ -19,7 +19,7 @@ export class Soundscape {
   private lfo: OscillatorNode;
   private voices: OscillatorNode[][] = [];
   private breezeGain: GainNode;
-  private breezePan: StereoPannerNode | PannerNode;
+  private breezePan: Spatial;
   private nodes: AudioScheduledSourceNode[] = [];
 
   constructor(
@@ -71,8 +71,9 @@ export class Soundscape {
     const noise = new AudioBufferSourceNode(ctx, { buffer: buf, loop: true });
     const band = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 700, Q: 0.6 });
     this.breezeGain = new GainNode(ctx, { gain: 0 });
-    this.breezePan = spatializer(ctx, panMode, 0, 0) as StereoPannerNode | PannerNode;
-    noise.connect(band).connect(this.breezeGain).connect(this.breezePan).connect(this.out);
+    this.breezePan = createSpatial(ctx, panMode, 0, 0);
+    noise.connect(band).connect(this.breezeGain).connect(this.breezePan.input);
+    this.breezePan.output.connect(this.out);
     // Slow gusts on the breeze filter.
     const gust = new OscillatorNode(ctx, { type: 'sine', frequency: 0.13 });
     const gustDepth = new GainNode(ctx, { gain: 250 });
@@ -92,13 +93,7 @@ export class Soundscape {
     const chord = p.tension > 0.5 ? SUSPENDED : RESOLVED;
     this.voices.forEach((pair, i) => pair.forEach((osc) => osc.frequency.setTargetAtTime(this.root * chord[i], t, 0.7)));
     this.breezeGain.gain.setTargetAtTime(p.breezeLevel * 0.5, t, 0.35);
-    if (this.breezePan instanceof StereoPannerNode) {
-      this.breezePan.pan.setTargetAtTime(p.breezePan, t, 0.3);
-    } else {
-      const rad = (p.breezeAzimuth * Math.PI) / 180;
-      this.breezePan.positionX.setTargetAtTime(Math.sin(rad), t, 0.3);
-      this.breezePan.positionZ.setTargetAtTime(-Math.cos(rad), t, 0.3);
-    }
+    this.breezePan.set(p.breezeAzimuth, p.breezePan, t, 0.3);
   }
 
   /** Dip briefly under a chime so it sits inside the bed rather than on top. */

@@ -121,9 +121,14 @@
           <div class="row">
             <label for="panmode">Panning</label>
             <select id="panmode">
-              <option value="stereo">Stereo (left/right)</option>
-              <option value="hrtf">3D / HRTF (headphones)</option>
+              <option value="binaural">Binaural (strongest left/right)</option>
+              <option value="hrtf">3D / HRTF (some front/back)</option>
+              <option value="stereo">Simple stereo</option>
             </select>
+          </div>
+          <div class="slider"><label for="emphasis">Direction emphasis</label><input id="emphasis" type="range" min="1" max="3" step="0.1" /><output for="emphasis"></output></div>
+          <div class="row">
+            <button id="test-sweep" class="wide">Test directions (left → ahead → right → behind)</button>
           </div>
           <label class="check"><input id="silent-aligned" type="checkbox" /> Silent when on course (no ticks)</label>
           <label class="check"><input id="speech" type="checkbox" /> Speak status messages</label>

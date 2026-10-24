@@ -1,22 +1,73 @@
 // Sound primitives. Everything is synthesized; no sample files.
 
-export type PanMode = 'hrtf' | 'stereo';
+import type { PanMode } from './mapping';
+export type { PanMode };
 
-/** A node that places a sound at an azimuth (HRTF) or a stereo pan position. */
-export function spatializer(ctx: AudioContext, mode: PanMode, azimuth: number, pan: number): AudioNode {
-  if (mode === 'stereo') {
-    return new StereoPannerNode(ctx, { pan });
-  }
-  const rad = (azimuth * Math.PI) / 180;
-  return new PannerNode(ctx, {
-    panningModel: 'HRTF',
-    distanceModel: 'linear',
-    rolloffFactor: 0,
-    // Listener faces -z; +x is right.
-    positionX: Math.sin(rad),
-    positionY: 0,
-    positionZ: -Math.cos(rad),
+/**
+ * Places sound in space. Connect sources to `input`, and `output` to the mix.
+ * `set` moves it (instantly, or gliding with time constant `tc`).
+ */
+export interface Spatial {
+  input: AudioNode;
+  output: AudioNode;
+  set(azimuth: number, pan: number, at: number, tc?: number): void;
+}
+
+function apply(p: AudioParam, v: number, at: number, tc: number): void {
+  if (tc > 0) p.setTargetAtTime(v, at, tc);
+  else p.setValueAtTime(v, at);
+}
+
+// Binaural cues of a real head at 90°: ~0.68 ms interaural delay, far ear ~14 dB quieter
+// and muffled (the head shadows high frequencies).
+const MAX_ITD = 0.00068;
+const FAR_EAR_GAIN = 0.2;
+const FAR_EAR_CUTOFF = 1100;
+
+/**
+ * Binaural: per-ear delay, level and head-shadow filter. Lateralizes much more strongly than
+ * plain panning (the brain uses timing differences most), without HRTF's front/back blur.
+ */
+function binaural(ctx: AudioContext, pan: number): Spatial {
+  const input = new GainNode(ctx, { channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers' });
+  const merger = new ChannelMergerNode(ctx, { numberOfInputs: 2 });
+  const ears = [0, 1].map((ch) => {
+    const delay = new DelayNode(ctx, { maxDelayTime: 0.002 });
+    const shadow = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 18000, Q: 0.5 });
+    const level = new GainNode(ctx);
+    input.connect(delay).connect(shadow).connect(level).connect(merger, 0, ch);
+    return { delay, shadow, level };
   });
+  const set = (_az: number, p: number, at: number, tc = 0) => {
+    // x: -1 full left … +1 full right (sine law, like a source moving round the head).
+    const x = Math.sin((Math.max(-1, Math.min(1, p)) * Math.PI) / 2);
+    ears.forEach((ear, ch) => {
+      const far = Math.max(0, ch === 0 ? x : -x); // left ear is far when the sound is right
+      apply(ear.delay.delayTime, MAX_ITD * far, at, tc);
+      apply(ear.shadow.frequency, 18000 * Math.pow(FAR_EAR_CUTOFF / 18000, far), at, tc);
+      apply(ear.level.gain, 1 - (1 - FAR_EAR_GAIN) * far, at, tc);
+    });
+  };
+  set(0, pan, ctx.currentTime);
+  return { input, output: merger, set };
+}
+
+export function createSpatial(ctx: AudioContext, mode: PanMode, azimuth: number, pan: number): Spatial {
+  if (mode === 'binaural') return binaural(ctx, pan);
+  if (mode === 'stereo') {
+    const node = new StereoPannerNode(ctx, { pan });
+    return { input: node, output: node, set: (_az, p, at, tc = 0) => apply(node.pan, p, at, tc) };
+  }
+  const node = new PannerNode(ctx, { panningModel: 'HRTF', distanceModel: 'linear', rolloffFactor: 0 });
+  const set = (az: number, _p: number, at: number, tc = 0) => {
+    const rad = (az * Math.PI) / 180;
+    // Listener faces -z; +x is right.
+    apply(node.positionX, Math.sin(rad), at, tc);
+    apply(node.positionY, 0, at, tc);
+    apply(node.positionZ, -Math.cos(rad), at, tc);
+  };
+  set(azimuth, pan, ctx.currentTime);
+  return { input: node, output: node, set };
 }
 
 /** Attack/decay envelope that avoids clicks. */

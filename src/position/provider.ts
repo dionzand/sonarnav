@@ -8,6 +8,8 @@ export interface PositionFix {
   speed: number;
   /** Seconds, monotonic. */
   time: number;
+  /** Estimated position error (m); 0 or absent = exact (simulator). */
+  accuracy?: number;
 }
 
 /** Anything that can tell the navigator where you are: the keyboard simulator, real GPS, a GPX replay. */

@@ -20,10 +20,10 @@ Use **headphones**. Click **Start audio** (or press Enter), then press **T** for
    Right-click the map to move yourself. **From** lets you search a start point.
 2. Press **↑** to start moving. Speed holds when you release the key. Steer with **← / →**.
 3. Listen. The default **Ambient chimes** style uses soft bell tones with a little reverb, all on a pentatonic scale:
-   - **Chime**: comes from the direction of the green beacon dot, a point just ahead on the route. Higher note means you're closer to dead-on, stepping down the scale as you veer off.
+   - **Chime**: comes from the direction to go (the green beacon dot, a point ahead on the route). Like a piano keyboard, the further **right** you need to go, the **higher** the note, and the further **left**, the **lower**. On course is the base note.
    - **Faint droplet**, every few seconds: you're on course (inside the dead zone).
    - **Deep low gong**: the route is behind you. The side it comes from is the way to turn.
-   - **Two-note chime**: a turn is coming, sounded low (below the guidance chimes) from the turn's real angle. It starts quiet and sparse, then gets louder and more frequent as you approach. A falling pair means a sharp turn.
+   - **Two-note turn cue**: a turn is coming. It moves from the centre towards the turn's real angle, stepping **up for a right turn and down for a left turn** (a bigger leap for sharp turns). It builds to a climax: it starts sparse and quiet, then accelerates steeply, climbs in pitch and swells as you approach. A soft open chord resolves it once you're through the turn.
    - **Two falling, slightly clouded notes**: you're off the route. A new route is planned automatically, and a soft rising arpeggio confirms it.
    - **Long pentatonic arpeggio**: you've arrived.
 
@@ -31,6 +31,11 @@ Use **headphones**. Click **Start audio** (or press Enter), then press **T** for
    - **Pad**: a soft, slowly breathing chord in the same key as the chimes. It breathes faster as you go faster and darkens as you turn off course. Off route, the chord drifts to an unresolved, suspended harmony, and it resolves again once you're back on route.
    - **Breeze**: an airy layer that always comes *from the direction to go*. It's faint when you're on course and grows as you turn away. Turn it off with the "Directional breeze" checkbox.
    - The background dips briefly under each chime, so the chimes sit inside it.
+
+   **Directionality** (Sound panel):
+   - **Binaural** panning (default) gives each ear what it would get from a real source: a sub-millisecond delay, plus the far ear quieter and muffled. This lateralizes much more strongly than plain stereo.
+   - **Direction emphasis** exaggerates angles (default 1.6×), so a 20° deviation already sounds clearly to one side.
+   - **Test directions** plays left, ahead, right and behind.
 
    When the situation changes (you drift off course, for example), the cue switches right away instead of waiting out the slow ambient rhythm.
 4. Tune everything in the **Sound** panel. Compare the schemes (Beacon / Continuous tone / Events only) and the styles (Ambient chimes / Classic beeps).
