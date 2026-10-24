@@ -164,9 +164,30 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 }
 .skip:focus { position: absolute; z-index: 10; top: 8px; left: 8px; background: var(--panel); padding: 6px 10px; }
 
+button.wide { width: 100%; padding: 10px 12px; }
+
+/* Live mode hides simulator-only controls; simulator mode hides live-only ones. */
+.live-only { display: none; }
+body.live .live-only { display: flex; }
+body.live .sim-only { display: none; }
+/* Touch devices have no keyboard shortcuts to show. */
+@media (hover: none) {
+  .keyboard-only { display: none; }
+}
+
 @media (max-width: 760px) {
-  #app { flex-direction: column-reverse; }
-  #panel { width: 100%; height: 45vh; border-right: 0; border-top: 1px solid var(--border); }
+  #app { flex-direction: column-reverse; height: 100dvh; }
+  #panel {
+    width: 100%;
+    height: 48dvh;
+    border-right: 0;
+    border-top: 1px solid var(--border);
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
   #map-wrap { flex: 1; }
-  #hud { width: 220px; font-size: 12px; }
+  #hud { top: calc(8px + env(safe-area-inset-top)); right: 8px; width: 200px; font-size: 11px; padding: 8px 10px; }
+  #hud svg { width: 80px; height: 80px; }
+  /* 16px inputs stop iOS Safari from zooming in on focus. */
+  input, select, button { font-size: 16px; }
+  .row label { min-width: 72px; }
 }

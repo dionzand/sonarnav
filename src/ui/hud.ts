@@ -15,6 +15,7 @@ export interface HudInfo {
   snap: string;
   noise: boolean;
   paused: boolean;
+  live?: { accuracy: number | null; source: 'compass' | 'course' | null; fixAge: number; waiting: boolean };
   audioOn: boolean;
   muted: boolean;
   state: NavState | null;
@@ -53,6 +54,12 @@ export function renderHud(el: HTMLElement, h: HudInfo): void {
     ['speed', `${(h.speed * 3.6).toFixed(1)} km/h${h.paused ? ' <span class="warn">paused</span>' : ''}`],
     ['snap', `${h.snap}${h.noise ? ' · gps noise' : ''}`],
   ];
+  if (h.live) {
+    const l = h.live;
+    const acc = l.accuracy === null ? '—' : `±${Math.round(l.accuracy)} m`;
+    const stale = l.fixAge > 5 ? ` <span class="warn">${Math.round(l.fixAge)} s old</span>` : '';
+    rows.splice(2, 1, ['gps', l.waiting ? '<span class="warn">waiting for fix…</span>' : `${acc}${stale}`], ['heading by', l.source ?? '—']);
+  }
   if (st) {
     rows.push(
       ['beacon', `${signed(st.relBearing)} · ${fmtDist(st.distanceToBeacon)}`],

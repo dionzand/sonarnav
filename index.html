@@ -2,8 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SonarNav Playground</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>SonarNav</title>
+    <meta name="description" content="Navigate by sound: stereo audio cues for walking and cycling." />
+    <meta name="theme-color" content="#0f1216" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon-192.png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SonarNav" />
   </head>
   <body>
     <a class="skip" href="#panel">Skip to controls</a>
@@ -13,6 +22,22 @@
           <h1>SonarNav <span class="tag">playground</span></h1>
           <button id="audio-start" class="primary">Start audio</button>
         </header>
+
+        <section aria-labelledby="h-live">
+          <h2 id="h-live">Position</h2>
+          <div class="row">
+            <button id="live-toggle" class="primary wide" aria-pressed="false">Use live GPS</button>
+          </div>
+          <p id="live-status" class="muted small" role="status">Simulator: move with the arrow keys.</p>
+          <div class="row live-only">
+            <label for="heading-source">Heading from</label>
+            <select id="heading-source">
+              <option value="auto">Auto (compass slow, GPS when moving)</option>
+              <option value="compass">Compass (phone held / mounted)</option>
+              <option value="course">GPS direction (phone in pocket)</option>
+            </select>
+          </div>
+        </section>
 
         <section aria-labelledby="h-route">
           <h2 id="h-route">Route</h2>
@@ -38,7 +63,7 @@
           <p id="route-summary" class="muted">No route yet.</p>
         </section>
 
-        <section aria-labelledby="h-sim">
+        <section aria-labelledby="h-sim" class="sim-only">
           <h2 id="h-sim">Simulator</h2>
           <div class="row">
             <label for="heading-input">Heading (°)</label>
@@ -97,7 +122,7 @@
           <label class="check"><input id="speech" type="checkbox" /> Speak status messages</label>
         </section>
 
-        <section aria-labelledby="h-keys">
+        <section aria-labelledby="h-keys" class="keyboard-only">
           <h2 id="h-keys">Keys <span class="muted small">(press ? any time)</span></h2>
           <dl id="keys" class="keys"></dl>
         </section>

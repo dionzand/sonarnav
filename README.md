@@ -35,6 +35,25 @@ Use **headphones**. Click **Start audio** (or press Enter), then press **T** for
    When the situation changes (you drift off course, for example), the cue switches right away instead of waiting out the slow ambient rhythm.
 4. Tune everything in the **Sound** panel. Compare the schemes (Beacon / Continuous tone / Events only) and the styles (Ambient chimes / Classic beeps).
 
+## On your phone (live GPS)
+
+The app is deployed to **https://dionzand.github.io/sonarnav/** on every push to `main`, via GitHub Actions (tests, build, Pages).
+
+1. Open the URL in **Safari** on the iPhone. Optionally tap Share → **Add to Home Screen** to get a full-screen app.
+2. Plug in headphones. Stereo direction needs both ears.
+3. Tap **Use live GPS** and allow **Location** and **Motion & Orientation** (the compass). That same tap also starts the audio.
+4. Search a destination in **To** (or tap the map), then start walking or cycling.
+
+**Heading from** (shown in live mode):
+- **Auto**: uses the compass when you're slow or standing, and the GPS direction of travel above ~7 km/h.
+- **Compass**: for a phone held in your hand or mounted on the handlebar.
+- **GPS direction**: for a phone in your pocket. It needs movement, so it's unreliable when you're standing still.
+
+**Known limits of the web version**
+- The screen has to stay on: iOS suspends web pages, and with them the audio, when the screen locks. The app asks iOS to keep the screen awake while live mode is on. Navigating with the phone locked in a pocket needs a native app.
+- Sound plays even with the silent switch on (Safari 16.4+).
+- GPS in cities is typically ±5–15 m. The HUD shows the current accuracy.
+
 ## Heading control
 
 | Key | Action |

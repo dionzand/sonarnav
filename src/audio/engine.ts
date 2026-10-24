@@ -60,6 +60,9 @@ export class AudioEngine {
 
   /** Must be called from a user gesture (browser autoplay rules). */
   async start(): Promise<void> {
+    // iOS: a "playback" session keeps sounding with the ringer/silent switch on (Safari 16.4+).
+    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+    if (session) session.type = 'playback';
     if (!this.ctx) {
       const ctx = (this.ctx = new AudioContext({ latencyHint: 'interactive' }));
       this.master = new GainNode(ctx, { gain: this.settings.volume });

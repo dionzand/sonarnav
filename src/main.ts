@@ -10,6 +10,8 @@ import { reverseGeocode } from './geocode/nominatim';
 import { Simulator, SNAP_MODES, SnapMode } from './position/simulator';
 import { NoisyGps } from './position/gpsNoise';
 import { fetchStreets } from './position/streets';
+import { HeadingSource, LiveGps } from './position/live';
+import { PositionFix } from './position/provider';
 import { MapView, CameraMode } from './ui/map';
 import { renderHud, cardinal, fmtDist } from './ui/hud';
 import { announce, setSpeech } from './ui/a11y';
@@ -63,6 +65,14 @@ const gps = new NoisyGps(sim);
 const router = new OsrmRouter();
 const audio = new AudioEngine(audioSettings, SCHEMES.find((s) => s.id === saved.scheme) ?? SCHEMES[0], () => sim.profile);
 
+const live = new LiveGps();
+/** Live = real phone GPS/compass; otherwise the keyboard simulator. */
+let liveMode = false;
+let lastFix: PositionFix | null = null;
+/** Where "you" are: the live fix, or the simulated walker. */
+const here = (): LngLat => (liveMode && lastFix ? lastFix.position : sim.position);
+const myHeading = (): number => (liveMode && lastFix ? lastFix.heading : sim.heading);
+
 let route: Route | null = null;
 let nav: Navigator | null = null;
 let navState: NavState | null = null;
@@ -73,7 +83,7 @@ let lastReroute = 0;
 
 const map = new MapView($('map'), sim.position, {
   onClick(p, mods) {
-    if (mods.ctrl) {
+    if (mods.ctrl && !liveMode) {
       sim.face(p);
       announce(`Facing ${Math.round(sim.heading)} degrees`);
     } else {
@@ -82,6 +92,7 @@ const map = new MapView($('map'), sim.position, {
     }
   },
   onRightClick(p) {
+    if (liveMode) return;
     sim.teleport(p);
     fromPos = null;
     $<HTMLInputElement>('from').value = '';
@@ -104,7 +115,7 @@ async function planRoute(opts: { reroute?: boolean } = {}): Promise<void> {
     $<HTMLInputElement>('to').focus();
     return;
   }
-  if (fromPos && !opts.reroute) {
+  if (fromPos && !opts.reroute && !liveMode) {
     sim.teleport(fromPos);
     fromPos = null;
   }
@@ -112,10 +123,10 @@ async function planRoute(opts: { reroute?: boolean } = {}): Promise<void> {
   summary.textContent = opts.reroute ? 'Rerouting…' : 'Planning…';
   try {
     const r = await router.route({
-      from: sim.position,
+      from: here(),
       to: destination,
       profile: sim.profile,
-      heading: opts.reroute ? sim.heading : undefined,
+      heading: opts.reroute ? myHeading() : undefined,
     });
     route = r;
     sim.route = r;
@@ -124,7 +135,7 @@ async function planRoute(opts: { reroute?: boolean } = {}): Promise<void> {
       nav.setRoute(r);
     } else nav = new Navigator(r, navSettings[sim.profile]);
     map.showRoute(r);
-    if (!opts.reroute && r.geometry.length > 1) sim.setHeading(bearing(r.geometry[0], r.geometry[Math.min(2, r.geometry.length - 1)]));
+    if (!opts.reroute && !liveMode && r.geometry.length > 1) sim.setHeading(bearing(r.geometry[0], r.geometry[Math.min(2, r.geometry.length - 1)]));
     const mins = Math.max(1, Math.round(r.duration / 60));
     const text = `${fmtDist(r.length)}, about ${mins} min by ${sim.profile === 'bike' ? 'bike' : 'foot'}, ${r.maneuvers.length} turns.`;
     summary.textContent = text;
@@ -132,7 +143,7 @@ async function planRoute(opts: { reroute?: boolean } = {}): Promise<void> {
       audio.event('rerouted');
       announce(`New route. ${text}`);
     } else {
-      announce(`Route ready. ${text} Press up arrow to start moving.`);
+      announce(`Route ready. ${text} ${liveMode ? 'Start moving and follow the sound.' : 'Press up arrow to start moving.'}`);
     }
     if (sim.snapMode === 'streets') void loadStreets();
   } catch (e) {
@@ -153,7 +164,7 @@ function clearRoute(): void {
 }
 
 async function loadStreets(): Promise<void> {
-  const pts = route?.geometry ?? [sim.position];
+  const pts = route?.geometry ?? [here()];
   const pad = 0.004;
   let [w, s, e, n] = [Infinity, Infinity, -Infinity, -Infinity];
   for (const [x, y] of pts) {
@@ -165,7 +176,8 @@ async function loadStreets(): Promise<void> {
   // Overpass gets slow on huge areas; cap at ~0.15° per side.
   if (e - w > 0.15 || n - s > 0.15) {
     announce('Route too long to load all streets; loading around your position.');
-    [w, s, e, n] = [sim.position[0], sim.position[1], sim.position[0], sim.position[1]];
+    const [x, y] = here();
+    [w, s, e, n] = [x, y, x, y];
   }
   announce('Loading streets…');
   try {
@@ -182,7 +194,7 @@ attachSearch($('from'), $('from-results'), () => map.center(), (p) => {
   sim.teleport(p.position);
   announce(`Start set to ${p.label}`);
 });
-attachSearch($('to'), $('to-results'), () => sim.position, (p) => {
+attachSearch($('to'), $('to-results'), here, (p) => {
   setDestination(p.position, p.label);
   void planRoute();
 });
@@ -304,9 +316,68 @@ async function startAudio(): Promise<void> {
   await audio.start();
   startBtn.textContent = 'Audio on';
   startBtn.setAttribute('aria-pressed', 'true');
-  announce('Audio on. Press T for a direction test.');
+  announce(liveMode ? 'Audio on.' : 'Audio on. Press T for a direction test.');
 }
 startBtn.addEventListener('click', () => void startAudio());
+
+// ---------- live GPS (phone) ----------
+const liveBtn = $<HTMLButtonElement>('live-toggle');
+const liveStatus = $('live-status');
+const headingSrcSel = $<HTMLSelectElement>('heading-source');
+headingSrcSel.addEventListener('change', () => (live.headingSource = headingSrcSel.value as HeadingSource));
+
+// Keep the screen on while navigating live; iOS releases the lock whenever the page is hidden.
+let wakeLock: WakeLockSentinel | null = null;
+async function keepAwake(): Promise<void> {
+  try {
+    wakeLock = (await navigator.wakeLock?.request('screen')) ?? null;
+  } catch {
+    wakeLock = null;
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  // iOS suspends audio in the background; pick up where we left off.
+  if (startBtn.getAttribute('aria-pressed') === 'true') void audio.start();
+  if (liveMode) void keepAwake();
+});
+
+async function setLive(on: boolean): Promise<void> {
+  if (on) {
+    liveBtn.disabled = true;
+    liveStatus.textContent = 'Asking for location and compass…';
+    try {
+      // All permission prompts and audio unlock must happen inside this tap.
+      const audioReady = startAudio();
+      await live.start();
+      await audioReady;
+      liveMode = true;
+      sim.releaseAll();
+      map.camera = 'heading';
+      camSel.value = 'heading';
+      void keepAwake();
+      liveStatus.textContent = live.error ?? 'Live: following your real position.';
+      announce('Live GPS on. Choose a destination.');
+    } catch (e) {
+      liveStatus.textContent = (e as Error).message;
+      announce((e as Error).message);
+    } finally {
+      liveBtn.disabled = false;
+    }
+  } else {
+    live.stop();
+    liveMode = false;
+    sim.teleport(lastFix?.position ?? sim.position);
+    void wakeLock?.release();
+    wakeLock = null;
+    liveStatus.textContent = 'Simulator: move with the arrow keys.';
+    announce('Back to simulator');
+  }
+  liveBtn.setAttribute('aria-pressed', String(liveMode));
+  liveBtn.textContent = liveMode ? 'Stop live GPS' : 'Use live GPS';
+  document.body.classList.toggle('live', liveMode);
+}
+liveBtn.addEventListener('click', () => void setLive(!liveMode));
 
 // ---------- keyboard ----------
 const KEYS: [string, string][] = [
@@ -350,11 +421,12 @@ function isTyping(t: EventTarget | null): boolean {
 }
 
 async function whereAmI(): Promise<void> {
-  const parts = [`Heading ${cardinal(sim.heading)}, ${Math.round(sim.heading)} degrees`];
+  const h = myHeading();
+  const parts = [`Heading ${cardinal(h)}, ${Math.round(h)} degrees`];
   if (navState) {
     parts.push(navState.offRoute ? 'Off route' : `${fmtDist(navState.remaining)} to go`);
   }
-  const place = await reverseGeocode(sim.position).catch(() => null);
+  const place = await reverseGeocode(here()).catch(() => null);
   if (place) parts.unshift(place);
   announce(parts.join('. '), { speak: true });
 }
@@ -376,6 +448,8 @@ window.addEventListener('keydown', (e) => {
   }
   if (isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
   const dir = ARROWS[e.key];
+  // In live mode your feet move you, not the keyboard.
+  if (liveMode && (dir || ' bfxsn'.includes(e.key.toLowerCase()))) return;
   if (dir) {
     e.preventDefault();
     if (e.shiftKey && (dir === 'left' || dir === 'right')) {
@@ -479,12 +553,18 @@ function step(): void {
   const now = performance.now();
   let dt = Math.min(0.5, (now - lastFrame) / 1000);
   lastFrame = now;
-  while (dt > 0) {
-    const h = Math.min(dt, 0.05);
-    sim.tick(h);
-    dt -= h;
+  let fix: PositionFix | null;
+  if (liveMode) {
+    fix = live.current(now / 1000);
+  } else {
+    while (dt > 0) {
+      const h = Math.min(dt, 0.05);
+      sim.tick(h);
+      dt -= h;
+    }
+    fix = gps.current(now / 1000);
   }
-  const fix = gps.current(now / 1000);
+  lastFix = fix;
   if (nav && route && fix) {
     navState = nav.update(fix.position, normalize360(fix.heading), fix.speed, now / 1000);
     handleEvents(navState);
@@ -497,18 +577,21 @@ setInterval(step, 20);
 
 function frame(now: number): void {
   if (route && navState) map.updateManeuvers(route, navState.next ? route.maneuvers.indexOf(navState.next) : -1);
-  map.updateWalker(sim.position, sim.heading);
+  map.updateWalker(here(), myHeading());
   map.updateNav(navState);
 
   if (now - lastHud > 100) {
     lastHud = now;
     if (document.activeElement !== headingInput) headingInput.value = String(Math.round(sim.heading));
     renderHud($('hud'), {
-      heading: sim.heading,
-      speed: sim.speed,
-      snap: sim.snapMode,
-      noise: gps.enabled,
-      paused: sim.paused,
+      heading: myHeading(),
+      speed: liveMode ? (lastFix?.speed ?? 0) : sim.speed,
+      snap: liveMode ? 'live GPS' : sim.snapMode,
+      noise: !liveMode && gps.enabled,
+      paused: !liveMode && sim.paused,
+      live: liveMode
+        ? { accuracy: live.accuracy, source: live.usedSource, fixAge: live.fixAge, waiting: !lastFix }
+        : undefined,
       audioOn: audio.running,
       muted: audio.muted,
       state: navState,
